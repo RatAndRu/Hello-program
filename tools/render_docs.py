@@ -43,9 +43,10 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.6.0",
+        version="0.7.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
+        modes_text="режимы: рука + лицо",
     )
     base.update(kw)
     return overlay.OverlayState(**base)
@@ -81,11 +82,12 @@ def main() -> int:
     save(overlay.render(background(), st, hands=[pinching], face=None), "overlay-aim.png")
 
     # 4. Две руки: масштаб / прокрутка + роли рук
-    left = synthetic_hand(center=(0.34, 0.74), scale=0.21)
-    right = synthetic_hand(center=(0.70, 0.72), scale=0.19)
+    left = synthetic_hand(center=(0.34, 0.80), scale=0.20)
+    right = synthetic_hand(center=(0.70, 0.78), scale=0.18)
     st = state(pose="ладонь", expression="нейтрально", hand_count=2,
                two_hand_hint="две ладони: разведите руки → масштаб",
-               split_roles=True, roles_text="роли: 1 — курсор, 2 — клики")
+               split_roles=True, roles_text="роли: 1 — курсор, 2 — клики",
+               modes_text="режимы: рука + 2-я рука: нажатия + лицо")
     save(overlay.render(background(), st, hands=[left, right], face=None, primary=0),
          "overlay-two-hands.png")
 
@@ -94,12 +96,14 @@ def main() -> int:
 
     panel = SettingsPanel(AppConfig())
     panel.open()
-    panel.goto_page(0)
+    panel.goto_page(0)                     # страница «Режимы» с переключателями
+    save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8)), "overlay-settings.png")
+    panel.goto_page(1)                     # страница «Курсор» с ползунками
     rows = panel.layout()
     panel._apply(rows[4], rows[4].track[0] + int(rows[4].track[2] * 0.42))
     shot = panel.draw(np.zeros((H, W, 3), dtype=np.uint8),
                       live="сейчас: щипок 0.42   жест: указательный   29 кадр/с")
-    save(shot, "overlay-settings.png")
+    save(shot, "overlay-settings-cursor.png")
 
     # 6. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)

@@ -29,7 +29,7 @@ from .lipreading import LipReader, TemplateStore, mouth_features
 from .overlay import OverlayState, render
 from .landmarks import WRIST
 from .pointer import PointerMapper
-from .settings_ui import SettingsPanel
+from .settings_ui import SettingsPanel, cycle_preset, modes_summary
 from .tracker import FrameResult, create_tracker
 
 log = logging.getLogger("airmouse")
@@ -234,6 +234,11 @@ class AirMouseApp:
             self._hands = hands
             self._face = res.face
             self._shape = None
+            if not self.cfg.hand.enabled:
+                # режим «только лицо»: руки рисуются, но ничего не нажимают
+                self.hand_fsm.update(None, now)
+                self.click_fsm.update(None, now)
+                hands = []
             index = self._pick_primary(hands)
             self._primary_index = index or 0
             hand = hands[index] if index is not None else None
@@ -342,6 +347,13 @@ class AirMouseApp:
         self.pointer.cfg = self.cfg.pointer
         self.state.pinch_threshold = self.cfg.hand.pinch_ratio
 
+    def cycle_modes(self) -> str:
+        """Клавиша V: рука → рука + лицо → две руки → только лицо."""
+        name = cycle_preset(self.cfg, self.router)
+        self._events_log.append(f"{time.strftime('%H:%M:%S')}  режим: {name}")
+        log.info("Режим управления: %s (%s)", name, modes_summary(self.cfg, self.router))
+        return name
+
     def settings_open(self) -> bool:
         return self.settings is not None and self.settings.is_open
 
@@ -358,7 +370,7 @@ class AirMouseApp:
             log.info("Настройки открываются только с окном: уберите --no-window")
             return False
         if self.settings is None:
-            self.settings = SettingsPanel(self.cfg)
+            self.settings = SettingsPanel(self.cfg, runtime=self.router)
         if not self.settings.open():
             return False
         self._bind_mouse()
@@ -457,6 +469,7 @@ class AirMouseApp:
         s.split_roles = split and len(self._hands) >= 2
         s.roles_text = ("роли: 1 — курсор, 2 — клики" if s.split_roles else "")
         s.settings_open = self.settings_open()
+        s.modes_text = "режимы: " + modes_summary(self.cfg, self.router)
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
@@ -577,10 +590,13 @@ class AirMouseApp:
                         self.router.paused = not self.router.paused
                     elif key in (ord("h"), ord("р")):
                         self.router.head_pointer = not self.router.head_pointer
+                        self.cfg.head_pointer = self.router.head_pointer
                     elif key in (ord("m"), ord("M"), ord("ь")):
                         self.switch_backend()
                     elif key in (ord("c"), ord("C"), ord("с"), ord("С")):
                         self.toggle_settings()
+                    elif key in (ord("v"), ord("V"), ord("в"), ord("В")):
+                        self.cycle_modes()
                     elif key in (ord("i"), ord("I"), ord("ш"), ord("?")):
                         self.state.show_help = not self.state.show_help
                     elif key == 9:  # Tab — тот же переключатель, что и «I»

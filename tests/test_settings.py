@@ -169,9 +169,11 @@ def test_settings_hint_visible_in_overlay():
 # --------------------------------------------------------------------------- #
 #  Панель: попадание мышью, кнопки, страницы
 # --------------------------------------------------------------------------- #
-def _panel(cfg=None, path=None):
+def _panel(cfg=None, path=None, page: int = 1):
+    """Панель сразу на странице «Курсор» (0 — это «Режимы»)."""
     panel = SettingsPanel(cfg or AppConfig(), path=path)
     panel.open()
+    panel.goto_page(page)
     return panel
 
 
@@ -238,7 +240,8 @@ def test_close_button_discards_when_untouched(tmp_path):
 
 def test_pages_and_keys():
     panel = _panel()
-    assert len(panel.pages) == 3
+    assert len(panel.pages) == 4
+    assert panel.pages[0].title == "Режимы"
     assert panel.on_key(ord("2")) == "page"
     assert panel.page == 1
     assert panel.on_key(9) == "page"          # Tab — следующая страница

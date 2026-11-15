@@ -14,9 +14,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -322,7 +322,7 @@ def changed_values(cfg: AppConfig, sliders: Sequence[Slider] = SLIDERS) -> List[
 # Ползунки рисуются сами, а не средствами OpenCV: так подписи гарантированно
 # на русском (встроенные ползунки HighGUI на Windows показывают кириллицу
 # «кракозябрами»), а вид совпадает с остальным окном.
-PAGE_ORDER = ("Курсор", "Щипок и клики", "Голова и две руки")
+PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и две руки")
 
 _BG = (26, 26, 30)
 _PANEL = (34, 34, 39)
@@ -336,21 +336,195 @@ _KNOB = (235, 235, 240)
 
 BUTTONS = ("СОХРАНИТЬ", "СБРОС", "ЗАКРЫТЬ")
 
+# готовые наборы режимов — одна кнопка вместо трёх переключателей
+PRESETS = ("РУКА", "РУКА + ЛИЦО", "ДВЕ РУКИ", "ТОЛЬКО ЛИЦО")
+
+
+@dataclass
+class Toggle:
+    """Переключатель режима: что включено прямо сейчас и как это менять."""
+
+    key: str
+    label: str
+    hint: str
+    get: Callable[[AppConfig, Any], bool]
+    set: Callable[[AppConfig, Any, bool], None]
+
+    def state(self, cfg: AppConfig, runtime: Any = None) -> bool:
+        return bool(self.get(cfg, runtime))
+
+    def flip(self, cfg: AppConfig, runtime: Any = None) -> bool:
+        value = not self.state(cfg, runtime)
+        self.set(cfg, runtime, value)
+        return self.state(cfg, runtime)
+
+
+def _set_two_hand(mode: str) -> Callable[[AppConfig, Any, bool], None]:
+    def setter(cfg: AppConfig, runtime: Any, on: bool) -> None:
+        if on:
+            # одновременно «вторая рука нажимает» и «две руки масштабируют»
+            # невозможно — это одни и те же две руки в кадре
+            cfg.hand.roles = "single"
+            cfg.hand.two_hand = mode
+        elif cfg.hand.two_hand == mode:
+            cfg.hand.two_hand = "off"
+
+    return setter
+
+
+def build_toggles() -> List[Toggle]:
+    """Режимы, которые можно включать в любых сочетаниях."""
+    return [
+        Toggle(
+            key="mode.hand",
+            label="Рука: курсор, клики, жесты",
+            hint="одна рука управляет мышью; выключите — останется только лицо",
+            get=lambda cfg, rt: cfg.hand.enabled,
+            set=lambda cfg, rt, on: setattr(cfg.hand, "enabled", bool(on)),
+        ),
+        Toggle(
+            key="mode.second_hand",
+            label="Вторая рука: только нажатия и жесты",
+            hint="первая рука ведёт курсор, вторая нажимает; курсор от неё не едет",
+            get=lambda cfg, rt: cfg.hand.roles == "split",
+            set=lambda cfg, rt, on: setattr(cfg.hand, "roles", "split" if on else "single"),
+        ),
+        Toggle(
+            key="mode.two_zoom",
+            label="Две руки: масштаб (Ctrl + колесо)",
+            hint="обе ладони — развести/свести; исключает режим нажатий второй рукой",
+            get=lambda cfg, rt: cfg.hand.two_hand == "zoom",
+            set=_set_two_hand("zoom"),
+        ),
+        Toggle(
+            key="mode.two_scroll",
+            label="Две руки: прокрутка двумя кулаками",
+            hint="два кулака вверх/вниз; исключает режим нажатий второй рукой",
+            get=lambda cfg, rt: cfg.hand.two_hand == "scroll",
+            set=_set_two_hand("scroll"),
+        ),
+        Toggle(
+            key="mode.face",
+            label="Лицо: мимика, кивок, поворот",
+            hint="моргание и мимика; работает одновременно с рукой",
+            get=lambda cfg, rt: cfg.face.enabled,
+            set=lambda cfg, rt, on: setattr(cfg.face, "enabled", bool(on)),
+        ),
+        Toggle(
+            key="mode.head_pointer",
+            label="Мышь головой",
+            hint="наклон головы двигает курсор; нужна включённая «Лицо»",
+            get=lambda cfg, rt: bool(getattr(rt, "head_pointer", cfg.head_pointer)),
+            set=_set_head_pointer,
+        ),
+    ]
+
+
+def _set_head_pointer(cfg: AppConfig, runtime: Any, on: bool) -> None:
+    cfg.head_pointer = bool(on)
+    if runtime is not None and hasattr(runtime, "head_pointer"):
+        runtime.head_pointer = bool(on)
+
+
+TOGGLES: List[Toggle] = build_toggles()
+
 
 @dataclass
 class Page:
     title: str
     sliders: List[Slider]
+    toggles: List[Toggle] = field(default_factory=list)
+    presets: bool = False
 
 
-def build_pages(sliders: Sequence[Slider] = SLIDERS) -> List[Page]:
-    """Разложить ползунки по страницам: курсор / щипок / голова и две руки."""
+def build_pages(sliders: Sequence[Slider] = SLIDERS,
+                toggles: Sequence[Toggle] = TOGGLES) -> List[Page]:
+    """Страницы: режимы / курсор / щипок / голова и две руки."""
     groups_all = groups(sliders)
     cursor = [s for name, items in groups_all if name.startswith("Курсор") for s in items]
     pinch = [s for name, items in groups_all if name.startswith("Щипок") for s in items]
     rest = [s for name, items in groups_all
             if not name.startswith("Курсор") and not name.startswith("Щипок") for s in items]
-    return [Page(PAGE_ORDER[0], cursor), Page(PAGE_ORDER[1], pinch), Page(PAGE_ORDER[2], rest)]
+    return [
+        Page(PAGE_ORDER[0], [], list(toggles), presets=True),
+        Page(PAGE_ORDER[1], cursor),
+        Page(PAGE_ORDER[2], pinch),
+        Page(PAGE_ORDER[3], rest),
+    ]
+
+
+# --------------------------------------------------------------------------- #
+#  Готовые наборы режимов
+# --------------------------------------------------------------------------- #
+def modes_summary(cfg: AppConfig, runtime: Any = None) -> str:
+    """Короткое описание того, что сейчас включено: «рука + лицо»."""
+    parts: List[str] = []
+    if cfg.hand.enabled:
+        parts.append("рука")
+        if cfg.hand.roles == "split":
+            parts.append("2-я рука: нажатия")
+        elif cfg.hand.two_hand == "zoom":
+            parts.append("две руки: масштаб")
+        elif cfg.hand.two_hand == "scroll":
+            parts.append("две руки: прокрутка")
+    if cfg.face.enabled:
+        parts.append("лицо")
+    if bool(getattr(runtime, "head_pointer", cfg.head_pointer)):
+        parts.append("мышь головой")
+    return " + ".join(parts) if parts else "всё выключено"
+
+
+def current_preset(cfg: AppConfig, runtime: Any = None) -> str:
+    """Какой готовый режим сейчас действует (по состоянию переключателей)."""
+    if not cfg.hand.enabled and cfg.face.enabled:
+        return "ТОЛЬКО ЛИЦО"
+    if cfg.hand.enabled and cfg.hand.roles == "split":
+        return "ДВЕ РУКИ"
+    if cfg.hand.enabled and cfg.face.enabled:
+        return "РУКА + ЛИЦО"
+    return "РУКА"
+
+
+def cycle_preset(cfg: AppConfig, runtime: Any = None) -> str:
+    """Переключить готовый режим по кругу (клавиша V) и вернуть его название."""
+    names = list(PRESETS)
+    current = current_preset(cfg, runtime)
+    index = names.index(current) if current in names else -1
+    nxt = names[(index + 1) % len(names)]
+    apply_preset(cfg, runtime, nxt)
+    return nxt
+
+
+def apply_preset(cfg: AppConfig, runtime: Any, name: str) -> None:
+    """Один клик — готовое сочетание режимов."""
+    def find(key: str) -> Toggle:
+        return next(t for t in TOGGLES if t.key == key)
+
+    def state(toggle: Toggle) -> bool:
+        return toggle.state(cfg, runtime)
+
+    def turn(keys: Sequence[str], on: bool) -> None:
+        for key in keys:
+            toggle = find(key)
+            if state(toggle) != on:
+                toggle.set(cfg, runtime, on)
+
+    if name == "РУКА":
+        # строго одна рука: вторая ничего не делает, лицо выключено
+        turn(["mode.two_zoom", "mode.two_scroll", "mode.second_hand"], False)
+        turn(["mode.hand"], True)
+        turn(["mode.face"], False)
+        turn(["mode.head_pointer"], False)
+    elif name == "РУКА + ЛИЦО":
+        turn(["mode.two_zoom", "mode.two_scroll", "mode.second_hand"], False)
+        turn(["mode.hand", "mode.face"], True)
+    elif name == "ДВЕ РУКИ":
+        turn(["mode.two_zoom", "mode.two_scroll"], False)
+        turn(["mode.hand", "mode.second_hand"], True)
+    elif name == "ТОЛЬКО ЛИЦО":
+        turn(["mode.two_zoom", "mode.two_scroll", "mode.second_hand"], False)
+        turn(["mode.face"], True)
+        turn(["mode.hand"], False)
 
 
 @dataclass
@@ -377,10 +551,15 @@ class SettingsPanel:
     KNOB_R = 8
 
     def __init__(self, cfg: AppConfig, path: Optional[Path] = None,
-                 sliders: Optional[Sequence[Slider]] = None) -> None:
+                 sliders: Optional[Sequence[Slider]] = None,
+                 runtime: Any = None,
+                 toggles: Optional[Sequence[Toggle]] = None) -> None:
         self.cfg = cfg
         self.path = path
-        self.pages = build_pages(sliders if sliders is not None else SLIDERS)
+        self.runtime = runtime
+        self.toggle_items: List[Toggle] = list(toggles if toggles is not None else TOGGLES)
+        self.pages = build_pages(sliders if sliders is not None else SLIDERS,
+                                 self.toggle_items)
         self.page = 0
         self.is_open = False
         self.dirty = False
@@ -399,7 +578,7 @@ class SettingsPanel:
         self.is_open = True
         self.dirty = False
         self.saved = False
-        self.status = "тяните ползунки мышью"
+        self.status = "переключайте режимы или тяните ползунки"
         return True
 
     def close(self, save: bool = False) -> None:
@@ -428,6 +607,41 @@ class SettingsPanel:
         self.page = max(0, min(len(self.pages) - 1, index))
 
     # ------------------------------------------------------------------ #
+    def toggle_rows(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[Toggle, Tuple[int, int, int, int]]]:
+        """Строки-переключатели текущей страницы: (переключатель, прямоугольник)."""
+        page = self.pages[self.page]
+        if not page.toggles:
+            return []
+        w, h = size
+        k = max(min(h / 540.0, w / 960.0), 0.5)
+        x = int(self.MARGIN * k)
+        width = int(w - 2 * self.MARGIN * k)
+        y = int(self.FIRST_Y * k)
+        row_h = int(self.ROW_H * k)
+        out = []
+        for toggle in page.toggles:
+            out.append((toggle, (x, y, width, row_h)))
+            y += row_h
+        return out
+
+    def preset_buttons(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        """Кнопки готовых режимов (только на странице «Режимы»)."""
+        if not self.pages[self.page].presets:
+            return []
+        w, h = size
+        k = max(min(h / 540.0, w / 960.0), 0.5)
+        rows = self.toggle_rows(size)
+        y = (rows[-1][1][1] + rows[-1][1][3] + int(14 * k)) if rows else int(self.FIRST_Y * k)
+        height = int(32 * k)
+        widths = [int(120 * k), int(150 * k), int(140 * k), int(150 * k)]
+        gap = int(12 * k)
+        x = int((w - (sum(widths) + gap * (len(widths) - 1))) / 2)
+        out = []
+        for name, width in zip(PRESETS, widths):
+            out.append((name, (x, y, width, height)))
+            x += width + gap
+        return out
+
     def layout(self, size: Tuple[int, int] = (960, 540)) -> List[Row]:
         """Положение строк текущей страницы (в пикселях кадра)."""
         w, h = size
@@ -492,6 +706,18 @@ class SettingsPanel:
             pass
 
         if event == cv2.EVENT_LBUTTONDOWN:
+            for name, (bx, by, bw, bh) in self.preset_buttons(size):
+                if bx <= x <= bx + bw and by <= y <= by + bh:
+                    apply_preset(self.cfg, self.runtime, name)
+                    self.dirty = True
+                    self.status = f"режим: {name} — {self.modes_text()}"
+                    return "reset"
+            for toggle, (tx, ty, tw, th) in self.toggle_rows(size):
+                if tx <= x <= tx + tw and ty <= y <= ty + th:
+                    on = toggle.flip(self.cfg, self.runtime)
+                    self.dirty = True
+                    self.status = f"{toggle.label}: {'ВКЛ' if on else 'ВЫКЛ'}"
+                    return "reset"
             for name, (bx, by, bw, bh) in buttons:
                 if bx <= x <= bx + bw and by <= y <= by + bh:
                     if name == "СОХРАНИТЬ":
@@ -518,6 +744,10 @@ class SettingsPanel:
         if event == cv2.EVENT_LBUTTONUP:
             self._drag = None
         return None
+
+    def modes_text(self) -> str:
+        """Строка вида «рука + лицо» — что сейчас работает."""
+        return modes_summary(self.cfg, self.runtime)
 
     def _apply(self, row: Row, x: int) -> None:
         slider = row.slider
@@ -562,7 +792,7 @@ class SettingsPanel:
         img[:] = _BG
 
         T.draw(img, "Настройки AirMouse", (int(self.MARGIN * k), int(14 * k)), int(24 * k), _FG)
-        T.draw(img, "Ползунки двигаются мышью · управление на паузе, курсор не убежит",
+        T.draw(img, "Мышь на паузе, пока панель открыта · режимы можно сочетать",
                (int(self.MARGIN * k), int(48 * k)), int(14 * k), _DIM)
 
         # вкладки страниц
@@ -578,6 +808,21 @@ class SettingsPanel:
                 cv2.line(img, (x, tab_y + int(20 * k)),
                          (x + width, tab_y + int(20 * k)), _ACCENT, 2, cv2.LINE_AA)
             x += width + int(26 * k)
+
+        # строки-переключатели (страница «Режимы»)
+        for toggle, (tx, ty, tw, th) in self.toggle_rows((w, h)):
+            on = toggle.state(self.cfg, self.runtime)
+            T.draw(img, toggle.label, (tx, ty + int(4 * k)), int(15 * k), _FG)
+            pill_w, pill_h = int(74 * k), int(24 * k)
+            px = tx + tw - pill_w
+            py = ty + int(4 * k)
+            cv2.rectangle(img, (px, py), (px + pill_w, py + pill_h),
+                          _ACCENT if on else _TRACK, -1)
+            word = "ВКЛ" if on else "ВЫКЛ"
+            ww, wh = T.measure(word, int(13 * k))
+            T.draw(img, word, (px + (pill_w - ww) // 2, py + (pill_h - wh) // 2),
+                   int(13 * k), _BG if on else _FG)
+            T.draw(img, toggle.hint, (tx, ty + int(26 * k)), int(11 * k), _DIM)
 
         # строки-ползунки
         for row in self.layout((w, h)):
@@ -600,6 +845,13 @@ class SettingsPanel:
             cv2.circle(img, (fill_to, ty + th // 2), r, _KNOB, -1, cv2.LINE_AA)
             cv2.circle(img, (fill_to, ty + th // 2), r, _BG, 1, cv2.LINE_AA)
 
+        # готовые наборы режимов
+        for name, (bx, by, bw, bh) in self.preset_buttons((w, h)):
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _PANEL, -1)
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _WARN, 1, cv2.LINE_AA)
+            tw, th_ = T.measure(name, int(12 * k))
+            T.draw(img, name, (bx + (bw - tw) // 2, by + (bh - th_) // 2), int(12 * k), _WARN)
+
         # кнопки
         for name, (bx, by, bw, bh) in self.buttons((w, h)):
             cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _PANEL, -1)
@@ -615,8 +867,10 @@ class SettingsPanel:
         note = f"изменено: {differ}" if differ else "всё как на заводе"
         T.draw(img, note, (int(self.MARGIN * k), live_y), int(13 * k),
                _CHANGED if differ else _DIM)
-        left_x = int(self.MARGIN * k) + int(120 * k)
+        left_x = int(self.MARGIN * k) + int(150 * k)
         right_edge = w - int(self.MARGIN * k)
+        if self.pages[self.page].presets:
+            live = "сейчас: " + self.modes_text()
         status = self.status[:70]
         status_w = T.measure(status, int(12 * k))[0] if status else 0
         if status:

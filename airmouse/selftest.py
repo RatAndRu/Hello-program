@@ -18,7 +18,7 @@ from .filters import HysteresisGate, OneEuroFilter
 from .gestures import HandFSM, Pose, analyze_hand, classify_pose, synthetic_hand
 from .lipreading import LipReader, TemplateStore, dtw_distance, normalize_sequence
 from .pointer import PointerMapper
-from .settings_ui import DEFAULTS, SettingsPanel
+from .settings_ui import DEFAULTS, SettingsPanel, apply_preset
 from .synthetic import synthetic_face
 
 
@@ -112,6 +112,7 @@ def check_settings_panel() -> Check:
     cfg = AppConfig()
     panel = SettingsPanel(cfg)
     panel.open()
+    panel.goto_page(1)                    # страница «Курсор»
     rows = panel.layout()
     row = rows[4] if len(rows) > 4 else rows[0]
     slider = row.slider
@@ -124,6 +125,24 @@ def check_settings_panel() -> Check:
     ok = bool(moved and restored and before is not None)
     return Check("ползунки настроек меняют конфиг", ok,
                  f"{slider.label}: {before:.3g} -> заводское {slider.get(cfg):.3g}")
+
+
+def check_modes() -> Check:
+    """Режимы включаются в любых сочетаниях, а вторая рука по умолчанию молчит."""
+    cfg = AppConfig()
+    runtime = type("R", (), {"head_pointer": False})()
+    apply_preset(cfg, runtime, "РУКА")
+    single = (cfg.hand.enabled and not cfg.face.enabled and cfg.hand.roles == "single")
+    apply_preset(cfg, runtime, "РУКА + ЛИЦО")
+    both = cfg.hand.enabled and cfg.face.enabled
+    apply_preset(cfg, runtime, "ДВЕ РУКИ")
+    two = cfg.hand.roles == "split" and cfg.hand.two_hand == "off"
+    apply_preset(cfg, runtime, "ТОЛЬКО ЛИЦО")
+    face_only = (not cfg.hand.enabled) and cfg.face.enabled
+    default_silent = AppConfig().hand.roles == "single" and AppConfig().hand.two_hand == "off"
+    ok = bool(single and both and two and face_only and default_silent)
+    return Check("режимы: рука / две руки / лицо", ok,
+                 "рука, рука+лицо, две руки, только лицо")
 
 
 def check_head_pointer() -> Check:
@@ -491,6 +510,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_builtin_gestures,
     check_debounce,
     check_head_pointer,
+    check_modes,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

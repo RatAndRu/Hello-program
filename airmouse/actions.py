@@ -237,6 +237,8 @@ class ActionRouter:
                 self.dragging = False
         elif action == "toggle_head_pointer":
             self.head_pointer = not self.head_pointer
+            # держим конфиг в курсе: режим должен сохраняться и быть виден в настройках
+            self.cfg.head_pointer = self.head_pointer
             self.log.append(f"head_pointer={self.head_pointer}")
         elif action == "toggle_overlay":
             self.overlay_visible = not self.overlay_visible

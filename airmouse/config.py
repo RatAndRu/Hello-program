@@ -132,7 +132,7 @@ class HandConfig:
     fist_scroll_gain: float = 22.0     # «тиков» прокрутки на единицу смещения
     fist_scroll_deadzone: float = 0.006
     pointer_source: str = "auto"       # auto | index_tip | palm
-    two_hand: str = "zoom"             # off | zoom | scroll — управление двумя руками
+    two_hand: str = "off"             # off | zoom | scroll — режим «две руки» (включается кнопкой)
     two_hand_deadzone: float = 0.004   # мёртвая зона изменения расстояния между руками
     two_hand_zoom_gain: float = 30.0   # «тиков» масштаба на единицу расстояния
     two_hand_scroll_gain: float = 22.0 # «тиков» прокрутки на единицу смещения

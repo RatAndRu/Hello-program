@@ -94,6 +94,7 @@ HELP_KEYS = (
     ("H", "мышь головой вкл/выкл"),
     ("M", "сменить движок (нейросеть ↔ классический CV)"),
     ("C", "настройки: ползунки калибровки"),
+    ("V", "режим по кругу: рука → рука + лицо → две руки → только лицо"),
     ("I / Tab", "эта справка"),
     ("пробел", "статистика в журнал"),
 )
@@ -134,9 +135,10 @@ class OverlayState:
     split_roles: bool = False        # «одна рука — курсор, вторая — нажатия»
     roles_text: str = ""             # кто чем занят (режим hand.roles=split)
     settings_open: bool = False      # окно настроек с ползунками открыто
+    modes_text: str = ""             # какие режимы включены: «режимы: рука + лицо»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход   P пауза   H мышь головой   C настройки   M движок   I справка"
+    hints: str = "Q выход  P пауза  H голова  C настройки  V режимы  M движок  I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -326,7 +328,7 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
              (actions, size_small))
     text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
     panel_w = text_w + int(24 * k)
-    n_extra = int(bool(state.roles_text)) + int(state.settings_open)
+    n_extra = int(bool(state.modes_text)) + int(bool(state.roles_text)) + int(state.settings_open)
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -341,6 +343,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     T.draw(img, pose_line, (x + 12, y + 76), size_small, FG)
     T.draw(img, actions, (x + 12, y + 96), size_small, acolor)
     extras = []
+    if state.modes_text:
+        extras.append((state.modes_text, INFO))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
         extras.append((state.roles_text, ACCENT))
     if state.settings_open:
@@ -504,7 +508,8 @@ def render(
                int(13 * k), (0, 255, 255), alpha=0.5)
 
     if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
-        n_extra = int(bool(state.roles_text)) + int(state.settings_open)
+        n_extra = (int(bool(state.modes_text)) + int(bool(state.roles_text))
+                   + int(state.settings_open))
         hint_y = int((12 + 104 + 30 * n_extra + 8) * k)
         _label(img, state.two_hand_hint, (int(12 * k), hint_y),
                int(14 * k), ACCENT, alpha=0.55)
