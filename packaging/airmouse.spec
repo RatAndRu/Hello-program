@@ -31,6 +31,24 @@ for package in ("mediapipe", "pystray", "cv2"):
     except Exception as exc:  # пакет не установлен — не повод падать
         print(f"[spec] {package}: {exc}")
 
+# Чистка мусора: тесты, стабы и байткод занимают десятки мегабайт и не нужны
+# работающему приложению.
+def _is_junk(dest: str) -> bool:
+    low = dest.replace("\\", "/").lower()
+    if "/test/" in low or low.startswith("test/") or "/tests/" in low:
+        return True
+    if "/__pycache__/" in low or "/.dist-info/" in low:
+        return True
+    return low.endswith((".pyi", ".pxd", ".pyx", ".c", ".h", ".hpp", ".chm"))
+
+
+_cut = 0
+for _list in (datas, binaries):
+    keep = [item for item in _list if not _is_junk(item[0])]
+    _cut += len(_list) - len(keep)
+    _list[:] = keep
+print(f"[spec] отброшено лишних файлов: {_cut}")
+
 # Модели .task можно положить внутрь сборки (тогда они всегда под рукой),
 # но по умолчанию не кладём: build-exe.bat копирует их рядом с EXE.
 models_dir = os.path.join(ROOT, "models")
@@ -48,7 +66,21 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["matplotlib", "scipy", "pandas", "tkinter", "tests"],
+    excludes=[
+        "matplotlib",   # mediapipe тянет его только для drawing_utils
+        "scipy",
+        "pandas",
+        "tkinter",
+        "tests",
+        "IPython",
+        "PyQt5",
+        "PySide2",
+        "PySide6",
+        "pytest",
+        "pydoc_data",
+        "lib2to3",
+        "doctest",
+    ],
     noarchive=False,
 )
 

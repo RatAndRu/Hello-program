@@ -32,8 +32,14 @@ jobs:
       - name: Зависимости
         run: |
           python -m pip install --upgrade pip
+          # mediapipe ставим без зависимостей: иначе он тащит opencv-contrib-python
+          # (cv2.pyd 108 МБ вместо 68) и matplotlib — это лишние ~45 МБ в сборке.
+          pip install --no-deps mediapipe==1.2.3
           pip install -r requirements.txt
           pip install pyinstaller pytest
+          python -c "import cv2, mediapipe, numpy; print('cv2', cv2.__version__, '| mediapipe', mediapipe.__version__, '| numpy', numpy.__version__)"
+          python -c "import importlib.util as u; print('contrib установлен:', u.find_spec('cv2') is not None)"
+          pip list
 
       - name: Модели MediaPipe
         run: |
@@ -79,6 +85,13 @@ jobs:
           python -c "open(r'dist/AirMouse/run.bat','wb').write(b'@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" AirMouse.exe\r\n')"
           du -sh dist/AirMouse
           ls -la dist/AirMouse | head -20
+
+      - name: Размер сборки
+        shell: bash
+        run: |
+          du -sm dist/AirMouse | sed 's/^/::notice::всего распаковано, МБ: /'
+          du -sm dist/AirMouse/_internal/* 2>/dev/null | sort -rn | head -12 | sed 's/^/::notice::   /'
+          du -sm dist/AirMouse/*.exe 2>/dev/null | sed 's/^/::notice::   /'
 
       - name: Дымовой тест собранного EXE
         run: |
@@ -137,9 +150,14 @@ jobs:
           if-no-files-found: warn
 
       - name: Архив
+        shell: pwsh
         run: |
+          # 7-Zip жмёт заметно плотнее Compress-Archive; формат остаётся обычным .zip
+          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
           cd dist
-          powershell -Command "Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force"
+          if (Test-Path $sevenZip) { & $sevenZip a -tzip -mx=9 -mmt=on AirMouse-windows.zip AirMouse | Out-Null }
+          else { Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force }
+          Get-Item AirMouse-windows.zip | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length/1MB,1)}}
           ls -la AirMouse-windows.zip
 
       - uses: actions/upload-artifact@v4
