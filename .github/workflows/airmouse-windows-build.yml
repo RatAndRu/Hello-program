@@ -82,25 +82,35 @@ jobs:
 
       - name: Дымовой тест собранного EXE
         run: |
+          set +e
           cd dist/AirMouse
+          mkdir -p ../smoke-logs
           fail=0
           run_console() {
-            local out status
-            out=$("$@" 2>&1); status=$?
-            echo "$out" | tail -n 12 | sed 's/^/::notice::/'
+            local name=$1; shift
+            "$@" > "../smoke-logs/$name.log" 2>&1
+            local status=$?
             echo "::notice::$* -> exit=$status"
-            [ $status -eq 0 ] || fail=1
+            tail -n 10 "../smoke-logs/$name.log" | sed 's/^/::notice::  /'
+            if [ $status -ne 0 ]; then
+              fail=1
+              echo "::error::$* завершился с кодом $status (см. артефакт smoke-logs)"
+            fi
           }
-          run_console ./AirMouse-debug.exe --version
-          run_console ./AirMouse-debug.exe selftest
-          run_console ./AirMouse-debug.exe lip list
-          run_console ./AirMouse-debug.exe demo --out smoke-out
+          run_console version ./AirMouse-debug.exe --version
+          run_console selftest ./AirMouse-debug.exe selftest
+          run_console lip ./AirMouse-debug.exe lip list
+          run_console demo ./AirMouse-debug.exe demo --out smoke-out
 
           # Оконная сборка: запускаем с таймаутом, чтобы сборка не зависла на диалоге
-          powershell -NoProfile -Command '$p = Start-Process -FilePath ".\AirMouse.exe" -ArgumentList "--version" -PassThru; if (-not $p.WaitForExit(20000)) { $p.Kill(); exit 3 } else { exit $p.ExitCode }'
+          powershell -NoProfile -Command '$p = Start-Process -FilePath ".\AirMouse.exe" -ArgumentList "--version" -PassThru; if (-not $p.WaitForExit(20000)) { $p.Kill(); exit 3 } else { exit $p.ExitCode }' > ../smoke-logs/version-gui.log 2>&1
           wstatus=$?
           echo "::notice::AirMouse.exe (без консоли) --version -> exit=$wstatus"
-          [ $wstatus -eq 0 ] || fail=1
+          cat ../smoke-logs/version-gui.log | sed 's/^/::notice::  /'
+          if [ $wstatus -ne 0 ]; then
+            fail=1
+            echo "::error::AirMouse.exe (без консоли) --version вернул $wstatus"
+          fi
 
           for f in AirMouse.exe AirMouse-debug.exe models/hand_landmarker.task models/face_landmarker.task; do
             if [ -f "$f" ]; then
@@ -110,13 +120,21 @@ jobs:
               fail=1
             fi
           done
-          ls -la
-          du -sh .
+          ls -la > ../smoke-logs/listing.log 2>&1
+          du -sh . >> ../smoke-logs/listing.log 2>&1
           if [ $fail -ne 0 ]; then
             echo "::error::дымовой тест EXE не пройден"
             exit 1
           fi
           echo "::notice::дымовой тест EXE пройден"
+
+      - name: Логи дымового теста
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: dist/smoke-logs
+          if-no-files-found: warn
 
       - name: Архив
         run: |
