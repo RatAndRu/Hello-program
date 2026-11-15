@@ -357,7 +357,7 @@ def build_sliders() -> List[Slider]:
         hint="выше — меньше ложных «рук» там, где их нет; ниже — ловит дальние руки",
     ))
 
-    # ---------------- две руки ----------------
+    # ---------------- тело целиком ----------------
     items.append(Slider(
         key="hand.two_hand_zoom_gain",
         label="масштаб двумя руками: скорость",
@@ -367,6 +367,76 @@ def build_sliders() -> List[Slider]:
         set=lambda cfg, v: setattr(cfg.hand, "two_hand_zoom_gain", float(v)),
         fmt="{:.0f}",
         hint="как сильно разведение ладоней крутит колесо с Ctrl",
+    ))
+    items.append(Slider(
+        key="body.min_visibility",
+        label="тело: порог видимости точки",
+        group="Тело",
+        lo=0.20, hi=0.90, step=0.05,
+        get=lambda cfg: cfg.body.min_visibility,
+        set=lambda cfg, v: setattr(cfg.body, "min_visibility", float(v)),
+        fmt="{:.2f}",
+        hint="выше — строже: «видно по пояс» становится чаще, случайные точки реже",
+    ))
+    items.append(Slider(
+        key="body.every_n_frames",
+        label="тело: считать позу раз в N кадров",
+        group="Тело",
+        lo=1.0, hi=5.0, step=1.0,
+        get=lambda cfg: float(cfg.body.every_n_frames),
+        set=lambda cfg, v: setattr(cfg.body, "every_n_frames", max(1, int(round(v)))),
+        fmt="{:.0f}",
+        hint="2 — вдвое меньше нагрузки на CPU, поза обновляется 15 раз в секунду",
+    ))
+    items.append(Slider(
+        key="body.squat_down",
+        label="присед: глубина «присел»",
+        group="Тело",
+        lo=0.25, hi=0.80, step=0.05,
+        get=lambda cfg: cfg.body.squat_down,
+        set=lambda cfg, v: setattr(cfg.body, "squat_down", float(v)),
+        fmt="{:.2f}",
+        hint="не считает приседания — уменьшите; считает лишние — увеличьте",
+    ))
+    items.append(Slider(
+        key="body.squat_up",
+        label="присед: глубина «встал»",
+        group="Тело",
+        lo=0.05, hi=0.40, step=0.05,
+        get=lambda cfg: cfg.body.squat_up,
+        set=lambda cfg, v: setattr(cfg.body, "squat_up", float(v)),
+        fmt="{:.2f}",
+        hint="должно быть меньше «присел»: разница — запас против дребезга",
+    ))
+    items.append(Slider(
+        key="body.squat_min_s",
+        label="присед: минимальный повтор, с",
+        group="Тело",
+        lo=0.10, hi=1.00, step=0.05,
+        get=lambda cfg: cfg.body.squat_min_s,
+        set=lambda cfg, v: setattr(cfg.body, "squat_min_s", float(v)),
+        fmt="{:.2f}",
+        hint="короче — дребезг точек, а не повторение",
+    ))
+    items.append(Slider(
+        key="body.lean_deg",
+        label="наклон корпуса, градусы",
+        group="Тело",
+        lo=10.0, hi=60.0, step=5.0,
+        get=lambda cfg: cfg.body.lean_deg,
+        set=lambda cfg, v: setattr(cfg.body, "lean_deg", float(v)),
+        fmt="{:.0f}",
+        hint="с какого угла считать наклоном вперёд/в сторону",
+    ))
+    items.append(Slider(
+        key="body.arms_up_hold_s",
+        label="руки вверх: сколько держать, с",
+        group="Тело",
+        lo=0.20, hi=2.00, step=0.10,
+        get=lambda cfg: cfg.body.arms_up_hold_s,
+        set=lambda cfg, v: setattr(cfg.body, "arms_up_hold_s", float(v)),
+        fmt="{:.1f}",
+        hint="дольше — случайно поднятая рука не считается жестом",
     ))
     items.append(Slider(
         key="hand.two_hand_scroll_gain",
@@ -418,8 +488,9 @@ def changed_values(cfg: AppConfig, sliders: Sequence[Slider] = SLIDERS) -> List[
 # на русском (встроенные ползунки HighGUI на Windows показывают кириллицу
 # «кракозябрами»), а вид совпадает с остальным окном.
 PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и руки",
-              "Моргание и глаза")
+              "Моргание и глаза", "Тело")
 PAGE_EYES = 4
+PAGE_BODY = 5
 
 _BG = (26, 26, 30)
 _PANEL = (34, 34, 39)
@@ -467,6 +538,11 @@ def _set_two_hand(mode: str) -> Callable[[AppConfig, Any, bool], None]:
             cfg.hand.two_hand = "off"
 
     return setter
+
+
+def _set_body(cfg: AppConfig, runtime: Any, on: bool) -> None:
+    """Режим тела: сам движок пересоздаёт приложение (см. AirMouseApp.set_body)."""
+    cfg.body.enabled = bool(on)
 
 
 def build_toggles() -> List[Toggle]:
@@ -522,6 +598,13 @@ def build_toggles() -> List[Toggle]:
             set=_set_head_pointer,
         ),
         Toggle(
+            key="mode.body",
+            label="Тело: скелет и упражнения",
+            hint="приседания, наклон, руки вверх (нужен MediaPipe)",
+            get=lambda cfg, rt: bool(getattr(cfg.body, "enabled", False)),
+            set=_set_body,
+        ),
+        Toggle(
             key="mode.gaze_pointer",
             label="Мышь глазами: курсор от зрачков",
             hint="взгляд уводит курсор (нужна калибровка)",
@@ -565,8 +648,9 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
     cursor = pick(("Курсор",))
     pinch = pick(("Щипок",))
     eyes = pick(("Моргание",))
+    body = pick(("Тело",))
     rest = [s for name, items in groups_all
-            if not any(name.startswith(p) for p in ("Курсор", "Щипок", "Моргание"))
+            if not any(name.startswith(p) for p in ("Курсор", "Щипок", "Моргание", "Тело"))
             for s in items]
     return [
         Page(PAGE_ORDER[0], [], list(toggles), presets=True),
@@ -574,6 +658,7 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
         Page(PAGE_ORDER[2], pinch),
         Page(PAGE_ORDER[3], rest),
         Page(PAGE_ORDER[4], eyes),
+        Page(PAGE_ORDER[5], body),
     ]
 
 

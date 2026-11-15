@@ -402,6 +402,48 @@ def check_body_squats() -> Check:
                  f"приседаний={len(reps)} (ждали 3), руки вверх={arms}, наклон={lean}")
 
 
+def check_body_overlay() -> Check:
+    """Тело видно: скелет рисуется, а «по пояс» — рисуется без ног и без счёта."""
+    from .body import B, BodyFSM, measure_body, synthetic_body
+    from .overlay import OverlayState, draw_body_ar, render
+
+    frame = np.full((540, 960, 3), 18, dtype=np.uint8)
+    full = frame.copy()
+    drawn_full = draw_body_ar(full, synthetic_body())
+    changed = int(np.abs(full.astype("int16") - frame.astype("int16")).sum()) > 0
+
+    waist_body = synthetic_body()
+    for index in (B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE,
+                  B.L_HEEL, B.R_HEEL, B.L_FOOT, B.R_FOOT):
+        waist_body[index, 3] = 0.0
+    waist = frame.copy()
+    drawn_waist = draw_body_ar(waist, waist_body)
+    metrics = measure_body(waist_body)
+
+    fsm = BodyFSM(BodyConfig())
+    t = 0.0
+    for squat in [0.0] * 15 + [0.9] * 16 + [0.0] * 16:      # один полный повтор
+        fsm.update(measure_body(synthetic_body(squat=squat)), t)
+        t += 1 / 30
+    reps = fsm.reps
+    for _ in range(60):
+        fsm.update(measure_body(waist_body), t)     # «по пояс» на приседе
+        t += 1 / 30
+    no_extra = fsm.reps == reps
+
+    state = OverlayState(body_enabled=True, body_text=fsm.text)
+    image = render(frame.copy(), state, hands=[], face=None, body=waist_body)
+    in_window = int(np.abs(image.astype("int16") - frame.astype("int16")).sum()) > 0
+
+    ok = bool(changed and drawn_full > 15 and 0 < drawn_waist < drawn_full
+              and metrics.visible and metrics.partial and metrics.depth == 0.0
+              and reps == 1 and no_extra and "по пояс" in fsm.text and in_window)
+    return Check("тело: скелет в окне и кадр «по пояс»", ok,
+                 f"связей целиком={drawn_full}, по пояс={drawn_waist}, "
+                 f"приседаний={reps}, лишних нет={no_extra}, "
+                 f"текст: {fsm.text or '—'}")
+
+
 def check_head_gain() -> Check:
     """Мышь головой: мёртвая зона стоит, большие углы разгоняются (HeadShift)."""
     from .config import FaceConfig
@@ -873,6 +915,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_gaze_pursuit,
     check_motion_profile,
     check_body_squats,
+    check_body_overlay,
     check_head_gain,
     check_gaze_dwell,
     check_settings_panel,

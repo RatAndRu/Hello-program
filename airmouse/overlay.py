@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from . import text as T
+from .body import B
 from .landmarks import (
     FACE_OVAL,
     F,
@@ -53,6 +54,14 @@ FINGER_COLORS = {
     "ring": (235, 120, 200),
     "pinky": (150, 150, 255),
 }
+# цвета «скелета» тела: корпус, левая/правая сторона, голова
+BODY_COLORS = {
+    "torso": (110, 235, 120),
+    "left": (60, 190, 255),
+    "right": (235, 130, 90),
+    "head": (230, 200, 120),
+}
+
 FINGER_NAMES = {
     "thumb": "большой",
     "index": "указательный",
@@ -144,6 +153,8 @@ class OverlayState:
     gaze_pointer: bool = False       # курсор двигают глаза (зрачки)
     gaze_text: str = ""              # «взгляд: вправо · мышь глазами ВКЛ»
     body_text: str = ""              # «тело: стоит · приседаний 3»
+    body_enabled: bool = False       # режим тела включён (иначе «тело: выключено»)
+    body_where: str = ""             # «видно целиком» / «видно по пояс»
     gaze_dwell: float = 0.0          # 0..1 — сколько ещё держать взгляд до клика
     gaze_absolute: bool = False      # курсор телепортируется по калибровке
     calib_active: bool = False       # идёт калибровка взгляда
@@ -212,6 +223,102 @@ def _label(img, text: str, org: Tuple[int, int], size: int = 15,
 # --------------------------------------------------------------------------- #
 #  Рука
 # --------------------------------------------------------------------------- #
+# какую часть тела красим каким цветом
+_BODY_LEFT = frozenset((
+    B.L_SHOULDER, B.L_ELBOW, B.L_WRIST, B.L_PINKY, B.L_INDEX, B.L_THUMB,
+    B.L_HIP, B.L_KNEE, B.L_ANKLE, B.L_HEEL, B.L_FOOT,
+))
+_BODY_RIGHT = frozenset((
+    B.R_SHOULDER, B.R_ELBOW, B.R_WRIST, B.R_PINKY, B.R_INDEX, B.R_THUMB,
+    B.R_HIP, B.R_KNEE, B.R_ANKLE, B.R_HEEL, B.R_FOOT,
+))
+_BODY_TORSO_PAIRS = frozenset((
+    (B.L_SHOULDER, B.R_SHOULDER), (B.L_HIP, B.R_HIP),
+    (B.L_SHOULDER, B.L_HIP), (B.R_SHOULDER, B.R_HIP),
+))
+
+
+def body_edge_color(a: int, b: int) -> Tuple[int, int, int]:
+    """Цвет связи: корпус — зелёный, левая сторона — голубая, правая — оранжевая."""
+    if (a, b) in _BODY_TORSO_PAIRS or (b, a) in _BODY_TORSO_PAIRS:
+        return BODY_COLORS["torso"]
+    if a in _BODY_LEFT or b in _BODY_LEFT:
+        return BODY_COLORS["left"]
+    if a in _BODY_RIGHT or b in _BODY_RIGHT:
+        return BODY_COLORS["right"]
+    return BODY_COLORS["head"]
+
+
+def body_joint_color(index: int) -> Tuple[int, int, int]:
+    if index in _BODY_LEFT:
+        return BODY_COLORS["left"]
+    if index in _BODY_RIGHT:
+        return BODY_COLORS["right"]
+    return BODY_COLORS["head"]
+
+
+def draw_body_ar(
+    img: np.ndarray,
+    points,
+    min_visibility: float = 0.5,
+    alpha: float = 0.85,
+    show_joints: bool = True,
+) -> int:
+    """AR-скелет тела по 33 точкам Pose. Возвращает число нарисованных связей.
+
+    Рисуются **только видимые** части: если человек в кадре по пояс, ноги
+    просто не появятся — никаких «дорисованных» суставов из ниоткуда. Это
+    важно и честно: пустая нога сразу показывает, что ниже пояса камера
+    ничего не знает (и счётчик приседаний там не работает).
+    """
+    from .body import POSE_EDGES, POSE_EDGES_SMALL
+
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[0] < 33 or pts.shape[1] < 2:
+        return 0
+    h, w = img.shape[:2]
+    vis = pts[:, 3] if pts.shape[1] >= 4 else np.ones(pts.shape[0])
+    xy = np.empty((pts.shape[0], 2), dtype=np.int32)
+    xy[:, 0] = np.clip(pts[:, 0], 0.0, 1.0) * (w - 1)
+    xy[:, 1] = np.clip(pts[:, 1], 0.0, 1.0) * (h - 1)
+
+    k = max(min(h / 540.0, w / 960.0), 0.5)
+    thick = max(int(6 * k), 3)
+    joint_r = max(int(4 * k), 2)
+
+    def edge_color(a: int, b: int) -> tuple:
+        return body_edge_color(a, b)
+
+    visible = vis >= min_visibility
+    over = img.copy()
+    drawn = 0
+    for a, b in POSE_EDGES:
+        if not (visible[a] and visible[b]):
+            continue
+        cv2.line(over, tuple(xy[a]), tuple(xy[b]), edge_color(a, b), thick, cv2.LINE_AA)
+        drawn += 1
+    # шея: Pose не даёт отдельной точки, поэтому рисуем линию от середины плеч
+    if visible[B.L_SHOULDER] and visible[B.R_SHOULDER] and visible[B.NOSE]:
+        neck = ((xy[B.L_SHOULDER] + xy[B.R_SHOULDER]) // 2)
+        cv2.line(over, (int(neck[0]), int(neck[1])), tuple(xy[B.NOSE]),
+                 BODY_COLORS["head"], max(thick - 1, 2), cv2.LINE_AA)
+        drawn += 1
+    for a, b in POSE_EDGES_SMALL:
+        if visible[a] and visible[b]:
+            cv2.line(over, tuple(xy[a]), tuple(xy[b]), edge_color(a, b),
+                     max(thick // 2, 1), cv2.LINE_AA)
+    cv2.addWeighted(over, alpha, img, 1.0 - alpha, 0, dst=img)
+
+    if show_joints:
+        for index in range(min(33, pts.shape[0])):
+            if not visible[index]:
+                continue
+            cv2.circle(img, tuple(xy[index]), joint_r, (250, 250, 252), -1, cv2.LINE_AA)
+            cv2.circle(img, tuple(xy[index]), joint_r, body_joint_color(index),
+                       max(int(2 * k), 1), cv2.LINE_AA)
+    return drawn
+
+
 def draw_hand_ar(
     img: np.ndarray,
     hand: Hand,
@@ -728,6 +835,8 @@ def render(
     shape=None,
     metrics=None,
     primary: int = 0,
+    body=None,
+    body_min_visibility: float = 0.35,
 ) -> np.ndarray:
     img = frame.copy()
     h, w = img.shape[:2]
@@ -754,6 +863,9 @@ def render(
         zw, _ = T.measure(zone_text, int(12 * k))
         _label(img, zone_text, (p2[0] - zw - int(8 * k), p1[1] + int(6 * k)),
                int(12 * k), DIM, alpha=0.4)
+
+    if body is not None:
+        draw_body_ar(img, body, min_visibility=body_min_visibility)
 
     for i, hand in enumerate(hands or []):
         secondary = i != primary

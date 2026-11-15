@@ -240,8 +240,9 @@ def test_close_button_discards_when_untouched(tmp_path):
 
 def test_pages_and_keys():
     panel = _panel()
-    assert len(panel.pages) == 5
+    assert len(panel.pages) == 6
     assert panel.pages[0].title == "Режимы"
+    assert panel.pages[5].title == "Тело"
     assert panel.on_key(ord("2")) == "page"
     assert panel.page == 1
     assert panel.on_key(9) == "page"          # Tab — следующая страница

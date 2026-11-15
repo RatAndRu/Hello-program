@@ -75,10 +75,43 @@ def test_arms_up_detected():
 def test_body_out_of_frame_is_not_measured():
     body = synthetic_body(visibility=0.1)
     assert measure_body(body).visible is False
-    partial = synthetic_body()
-    partial[B.L_KNEE, 3] = 0.0          # колено перекрыто столом
-    assert measure_body(partial).visible is False
     assert measure_body(np.zeros((10, 4))).visible is False
+    # без плеч и таза позы нет: это не «по пояс», а «человека нет»
+    no_torso = synthetic_body()
+    no_torso[B.L_SHOULDER, 3] = 0.0
+    assert measure_body(no_torso).visible is False
+
+
+def test_body_visible_to_waist_is_measured_partially():
+    """Человек в кадре «по пояс»: поза есть, но приседания не считаются."""
+    body = synthetic_body()
+    for index in (B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE):
+        body[index, 3] = 0.0            # ноги за краем кадра
+    metrics = measure_body(body)
+    assert metrics.visible is True
+    assert metrics.partial is True and metrics.legs_ok is False
+    assert metrics.depth == 0.0                       # глубину взять неоткуда
+    assert metrics.where == "видно по пояс"
+    # наклон и руки от этого не страдают
+    assert measure_body(_without_legs(synthetic_body(lean=40))).lean > 25
+    assert measure_body(_without_legs(synthetic_body(arms_up=1.0))).arms_up > 0.6
+
+
+def _without_legs(body: np.ndarray) -> np.ndarray:
+    out = np.array(body, dtype=np.float64)
+    for index in (B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE):
+        out[index, 3] = 0.0
+    return out
+
+
+def test_body_with_one_hip_still_works():
+    """Кадр обрезан по бедру: второй сустав за краем — поза всё равно есть."""
+    body = synthetic_body()
+    body[B.R_HIP, 3] = 0.0
+    metrics = measure_body(body)
+    assert metrics.visible is True
+    assert metrics.legs_ok is False
+    assert metrics.partial is True
 
 
 # --------------------------------------------------------------------------- #

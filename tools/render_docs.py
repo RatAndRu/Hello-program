@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.17.0",
+        version="0.18.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -110,6 +110,10 @@ def main() -> int:
     save(shot, "overlay-settings-cursor.png")
     panel.goto_page(4)                     # страница «Моргание и глаза»
     save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8)), "overlay-settings-eyes.png")
+    panel.goto_page(5)                     # страница «Тело»
+    save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8),
+                    live="сейчас: тело видно целиком · глубина 0%   29 кадр/с"),
+         "overlay-settings-body.png")
 
     # 6. Калибровка взгляда: красная точка ползёт по экрану, за ней след
     from airmouse.gaze import PURSUIT_DURATION_S, pursuit_point
@@ -136,7 +140,29 @@ def main() -> int:
     save(overlay.render(background(), st, hands=[palm], face=face),
          "overlay-motion-profile.png")
 
-    # 7. Справка по жестам
+    # 7. Тело целиком: скелет поверх человека + строка про счётчик
+    from airmouse.body import B, synthetic_body
+
+    standing = synthetic_body(center=(0.50, 0.47), height=0.74)
+    st = state(pose="ладонь", expression="нейтрально", hand_count=0,
+               body_enabled=True, body_where="видно целиком",
+               body_text="тело: приседает · приседаний 3 · глубина 62% · наклон 8°")
+    squat_body = synthetic_body(center=(0.50, 0.47), height=0.74, squat=0.75)
+    save(overlay.render(background(), st, hands=[], face=None, body=squat_body),
+         "overlay-body.png")
+
+    # 7б. «По пояс»: ниже пояса точек нет — ноги не дорисовываются
+    waist = synthetic_body(center=(0.50, 0.44), height=0.74)
+    for index in (B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE,
+                  B.L_HEEL, B.R_HEEL, B.L_FOOT, B.R_FOOT):
+        waist[index, 3] = 0.0
+    st = state(pose="—", expression="нейтрально", hand_count=0,
+               body_enabled=True, body_where="видно по пояс",
+               body_text="тело: стоит · видно по пояс · наклон 4°")
+    save(overlay.render(background(), st, hands=[], face=None, body=waist),
+         "overlay-body-waist.png")
+
+    # 8. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)
     save(overlay.render(background(), st, hands=[palm], face=face), "overlay-help.png")
     return 0

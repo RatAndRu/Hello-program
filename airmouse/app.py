@@ -135,6 +135,8 @@ class AirMouseApp:
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
         self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
         self._gaze_drift_at = -1e9              # когда говорили «лицо уехало, калибруй»
+        self._body_points = None                # последние 33 точки тела (для скелета)
+        self._body_want: Optional[bool] = None  # с каким «хочу тело» создан движок
         self.motion_wizard: Optional[MotionWizard] = None
         self._motion_at = 0.0                   # время прошлого кадра профиля
         self._body_counter = 0                  # прореживание позы тела
@@ -197,6 +199,17 @@ class AirMouseApp:
         self.camera = ThreadedCamera(self.cfg.camera).start()
         w, h = self.camera.camera.resolution
         log.info("Камера: %s, %dx%d", self.camera.camera.source_name, w, h)
+        # Тело включаем сами, если модель позы уже лежит рядом (в собранном EXE
+        # она есть всегда) — иначе человек запускает, не видит скелета и решает,
+        # что детект тела не работает.
+        if not bool(getattr(self.cfg.body, "enabled", False)) and \
+                bool(getattr(self.cfg.body, "auto", True)):
+            from .models import find_model
+            pose_model = find_model(resolve_path(self.cfg.model_dir), "pose_landmarker")
+            if pose_model is not None:
+                self.cfg.body.enabled = True
+                log.info("Тело: модель позы найдена (%s) — включаю автоматически",
+                         pose_model.name)
         self.tracker = create_tracker(
             self.cfg.tracker,
             self.cfg.hand,
@@ -206,6 +219,11 @@ class AirMouseApp:
             want_body=bool(getattr(self.cfg.body, "enabled", False)),
         )
         log.info("Распознавание: %s", getattr(self.tracker, "name", "?"))
+        self._body_want = bool(getattr(self.cfg.body, "enabled", False))
+        if self._body_want and not getattr(self.tracker, "want_body", False):
+            self.cfg.body.enabled = False
+            self._body_want = False
+            log.warning("Тело: движок не умеет позу — режим тела выключен")
         if self.cfg.lip.enabled:
             store = TemplateStore(resolve_path(self.cfg.lip.template_dir))
             self.lip_reader = LipReader(
@@ -461,6 +479,9 @@ class AirMouseApp:
             events = self._translate(events, now)
         else:
             res = self.tracker.process(frame, ts_ms)
+            self._body_points = (getattr(res, "body", None)
+                                 if bool(getattr(self.cfg.body, "enabled", False)) else None)
+            self._reconcile_body()
             hands = self.hand_gate.update(res.hands)
             if self.cfg.hand.second_hand == "ignore" and len(hands) > 1:
                 hands = hands[:1]
@@ -1309,7 +1330,17 @@ class AirMouseApp:
         s.head_pointer = self.router.head_pointer
         s.gaze_pointer = self.router.gaze_pointer
         s.gaze_text = self.gaze_text() if self._metrics is not None else ""
-        s.body_text = self.body_fsm.text if self.body_fsm.metrics.visible else ""
+        s.body_enabled = bool(getattr(self.cfg.body, "enabled", False))
+        metrics_body = self.body_fsm.metrics
+        s.body_where = metrics_body.where if metrics_body.visible else ""
+        if not s.body_enabled:
+            s.body_text = "тело: выключено — клавиша T (или флаг --body)"
+        elif metrics_body.visible:
+            s.body_text = self.body_fsm.text
+        elif getattr(self.tracker, "want_body", False):
+            s.body_text = "тело: не вижу — встаньте в кадр (или отойдите на шаг)"
+        else:
+            s.body_text = "тело: модель позы не загрузилась (нужен MediaPipe)"
         s.gaze_absolute = bool(self.cfg.face.gaze_absolute and self.gaze_calib.ready)
         s.calib_active = self.calibrating
         s.calib_target = self.calibration_target()
@@ -1417,6 +1448,8 @@ class AirMouseApp:
                             frame, self.state, self._hands, self._face,
                             shape=self._shape, metrics=self._metrics,
                             primary=self._primary_index,
+                            body=self._body_points if self.cfg.body.show_skeleton else None,
+                            body_min_visibility=float(self.cfg.body.min_visibility),
                         )
                 else:
                     canvas = None
@@ -1494,6 +1527,9 @@ class AirMouseApp:
         if self.calibrating and keys.matches(key, "space"):
             self.confirm_gaze_point()
             return True
+        if keys.matches(key, "t"):
+            self.toggle_body()
+            return True
         if keys.matches(key, "n"):
             if self.motion_wizard is not None:
                 self.cancel_motion_profile()
@@ -1562,6 +1598,103 @@ class AirMouseApp:
             return True
         except Exception:
             return False
+
+    # ------------------------------------------------------------------ #
+    #  Тело целиком: включение на ходу (клавиша T)
+    # ------------------------------------------------------------------ #
+    def set_body(self, on: bool, note: bool = True) -> str:
+        """Включить/выключить распознавание тела и, если нужно, пересоздать движок.
+
+        Модель позы — отдельная модель MediaPipe, поэтому её нельзя «включить
+        на ходу» в уже созданном движке: его приходится создать заново (доли
+        секунды, камера не останавливается).
+        """
+        on = bool(on)
+        was = bool(getattr(self.cfg.body, "enabled", False))
+        self.cfg.body.enabled = on
+        if not on:
+            self._body_points = None
+            self.body_fsm = BodyFSM(self.cfg.body)
+            text = "тело: выключено"
+            if note:
+                self._events_log.appendleft(text)
+            return text
+
+        if getattr(self.tracker, "want_body", False):
+            text = "тело: уже включено"
+            if note:
+                self._events_log.appendleft(text)
+            return text
+
+        backend = getattr(self.tracker, "name", self.cfg.tracker)
+        target = "mediapipe" if backend in ("mediapipe", "auto") else backend
+        try:
+            new = create_tracker(
+                target,
+                self.cfg.hand,
+                self.cfg.face,
+                resolve_path(self.cfg.model_dir),
+                progress=log.info,
+                want_body=True,
+            )
+        except Exception as exc:
+            self.cfg.body.enabled = was
+            text = f"тело не включилось: {type(exc).__name__}: {exc}"
+            log.error("%s", text)
+            self.state.backend_note = text[:64]
+            if note:
+                self._events_log.appendleft(text)
+            return text
+
+        if not getattr(new, "want_body", False):
+            try:
+                new.close()
+            except Exception:
+                pass
+            self.cfg.body.enabled = was
+            text = "тело: нужен MediaPipe (классическое CV позу не видит)"
+            if note:
+                self._events_log.appendleft(text)
+            return text
+
+        self._install_tracker(new)
+        self.body_fsm = BodyFSM(self.cfg.body)
+        text = "тело: включено — встаньте целиком в кадр"
+        if note:
+            self._events_log.appendleft(text)
+        log.info("Режим тела включён (клавиша T)")
+        return text
+
+    def toggle_body(self) -> str:
+        return self.set_body(not bool(getattr(self.cfg.body, "enabled", False)))
+
+    def _reconcile_body(self) -> None:
+        """Следить, не переключили ли тело ползунком в окне настроек."""
+        want = bool(getattr(self.cfg.body, "enabled", False))
+        if self._body_want is None or want == self._body_want:
+            self._body_want = want
+            return
+        self._body_want = want
+        self.set_body(want, note=True)
+
+    def _install_tracker(self, new: Any) -> None:
+        """Поставить новый движок и сбросить автоматы (общая часть с M)."""
+        old, self.tracker = self.tracker, new
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+        self.hand_fsm = HandFSM(self.cfg.hand, self._two_hand_relax())
+        self.head_pose.reset()
+        self.two_hand_fsm = TwoHandFSM(self.cfg.hand, self._two_hand_relax())
+        self.face_fsm = FaceFSM(self.cfg.face)
+        self.body_fsm = BodyFSM(self.cfg.body)
+        self._metrics = None
+        self._face_counter = 0
+        self._body_points = None
+        self._armed_at = time.monotonic() + max(self.cfg.warmup_s, 0.0) * 0.5
+        self._body_want = bool(getattr(self.cfg.body, "enabled", False))
 
     def switch_backend(self) -> str:
         """Переключить движок на лету (клавиша M) и вернуть новый."""

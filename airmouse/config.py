@@ -160,7 +160,9 @@ class HandConfig:
 class BodyConfig:
     """Тело целиком (MediaPipe Pose, 33 точки): упражнения и крупные жесты."""
 
-    enabled: bool = False              # по умолчанию выкл: лишний CPU и модель
+    enabled: bool = False              # включится само, если модель позы уже есть
+    auto: bool = True                  # включать тело, когда модель лежит рядом
+    show_skeleton: bool = True         # рисовать «скелет» поверх человека
     every_n_frames: int = 2            # считать позу раз в N кадров
     min_visibility: float = 0.5        # точки тела должны быть реально видны
     smooth: float = 0.85               # сила фильтра 1€ (больше — плавнее)

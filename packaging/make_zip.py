@@ -34,6 +34,9 @@ INCLUDE_FILES = [
     "packaging/airmouse.spec",
     "packaging/airmouse_entry.py",
     "docs/airmouse-preview.png",
+    "docs/overlay-body.png",
+    "docs/overlay-body-waist.png",
+    "docs/overlay-settings-body.png",
 ]
 INCLUDE_DIRS = ["airmouse", "tests"]
 SKIP_SUFFIXES = {".pyc", ".pyo", ".task", ".part", ".avi", ".mp4", ".gif", ".npz"}
