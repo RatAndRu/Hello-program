@@ -39,7 +39,7 @@ jobs:
           pip install pyinstaller pytest
           python -c "import cv2, mediapipe, numpy; print('cv2', cv2.__version__, '| mediapipe', mediapipe.__version__, '| numpy', numpy.__version__)"
           python -c "import importlib.util as u; print('contrib установлен:', u.find_spec('cv2') is not None)"
-          pip list
+          pip list | grep -iE "opencv|mediapipe|numpy" | sed 's/^/::notice:: /' 
 
       - name: Модели MediaPipe
         run: |
@@ -89,9 +89,14 @@ jobs:
       - name: Размер сборки
         shell: bash
         run: |
-          du -sm dist/AirMouse | sed 's/^/::notice::всего распаковано, МБ: /'
-          du -sm dist/AirMouse/_internal/* 2>/dev/null | sort -rn | head -12 | sed 's/^/::notice::   /'
-          du -sm dist/AirMouse/*.exe 2>/dev/null | sed 's/^/::notice::   /'
+          echo "::notice::всего распаковано, МБ: $(du -sm dist/AirMouse | cut -f1)"
+          du -sm dist/AirMouse/*.exe 2>/dev/null | sed 's/^/::notice::: exe /'
+          du -sm dist/AirMouse/_internal/* 2>/dev/null | sort -rn | head -6 | sed 's/^/::notice::: папка /'
+          find dist/AirMouse -type f -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -8 |
+            awk -F'\t' '{printf "::notice::: %.1f МБ  %s\n", $1/1048576, $2}'
+          echo "::group::полный список"
+          find dist/AirMouse -type f -printf '%s\t%p\n' | sort -rn | head -40
+          echo "::endgroup::"
 
       - name: Дымовой тест собранного EXE
         run: |
@@ -150,14 +155,31 @@ jobs:
           if-no-files-found: warn
 
       - name: Архив
-        shell: pwsh
+        shell: bash
         run: |
-          # 7-Zip жмёт заметно плотнее Compress-Archive; формат остаётся обычным .zip
-          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+          set +e
+          mkdir -p smoke-logs
           cd dist
-          if (Test-Path $sevenZip) { & $sevenZip a -tzip -mx=9 -mmt=on AirMouse-windows.zip AirMouse | Out-Null }
-          else { Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force }
-          Get-Item AirMouse-windows.zip | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length/1MB,1)}}
+          SZ="/c/Program Files/7-Zip/7z.exe"
+          if [ -x "$SZ" ]; then
+            "$SZ" a -tzip -mx=9 -mmt=on AirMouse-windows.zip AirMouse > ../smoke-logs/7z.log 2>&1
+            code=$?
+            echo "::notice::7z exit=$code"
+            tail -n 4 ../smoke-logs/7z.log | sed 's/^/::notice::  /'
+            if [ $code -ne 0 ]; then
+              echo "::error::7z завершился с кодом $code — архивируем встроенным Compress-Archive"
+              rm -f AirMouse-windows.zip
+              powershell -Command "Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force"
+            fi
+          else
+            echo "::notice::7-Zip не найден, используем Compress-Archive"
+            powershell -Command "Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force"
+          fi
+          if [ ! -f AirMouse-windows.zip ]; then
+            echo "::error::архив не создан"
+            exit 1
+          fi
+          echo "::notice::размер архива, МБ: $(( $(stat -c%s AirMouse-windows.zip) / 1048576 ))"
           ls -la AirMouse-windows.zip
 
       - uses: actions/upload-artifact@v4
