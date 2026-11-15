@@ -68,6 +68,10 @@ const prompts = [
   'пирамида 4 120 140',
   'уголок 50x50 длина 400',
   'коробка 200x150x100 с крышкой',
+  'шар 120 12x8',
+  'кружка 90x110',
+  'бутылка 80x220',
+  'ступенчатая пирамида 160 4 40',
 ]
 for (const prompt of prompts) {
   await page.evaluate((p) => {
@@ -81,6 +85,12 @@ for (const prompt of prompts) {
 }
 
 // скриншот финального состояния + «разложенный» вид
+await page.evaluate(() => {
+  const ta = document.querySelector('#prompt')
+  ta.value = 'коробка 200x150x100 с крышкой'
+  document.querySelector('#build').click()
+})
+await new Promise((r) => setTimeout(r, 900))
 await page.screenshot({ path: 'tmp/shot-box.png' })
 await page.evaluate(() => {
   const s = document.querySelector('#fold')

@@ -108,6 +108,86 @@ export function rigidRotAbout(p: V3, axis: V3, angleDeg: number): Rigid {
   return { m, t: sub3(p, m3apply(m, p)) }
 }
 
+/** Обратное преобразование: из локальных координат обратно в мировые. */
+export function rigidInv(r: Rigid): Rigid {
+  const m = m3transpose(r.m)
+  return { m, t: mul3(m3apply(m, r.t), -1) }
+}
+
+/** Сдвиг в плоскости листа. */
+export const rigidShift = (dx: number, dy: number): Rigid => ({ m: m3id(), t: [dx, dy, 0] })
+
+/** Кватернион из матрицы поворота (для интерполяции). */
+function quatOf(m: M3): number[] {
+  const tr = m[0] + m[4] + m[8]
+  let w: number, x: number, y: number, z: number
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2
+    w = 0.25 * s
+    x = (m[7] - m[5]) / s
+    y = (m[2] - m[6]) / s
+    z = (m[3] - m[1]) / s
+  } else if (m[0] > m[4] && m[0] > m[8]) {
+    const s = Math.sqrt(1 + m[0] - m[4] - m[8]) * 2
+    w = (m[7] - m[5]) / s
+    x = 0.25 * s
+    y = (m[1] + m[3]) / s
+    z = (m[2] + m[6]) / s
+  } else if (m[4] > m[8]) {
+    const s = Math.sqrt(1 + m[4] - m[0] - m[8]) * 2
+    w = (m[2] - m[6]) / s
+    x = (m[1] + m[3]) / s
+    y = 0.25 * s
+    z = (m[5] + m[7]) / s
+  } else {
+    const s = Math.sqrt(1 + m[8] - m[0] - m[4]) * 2
+    w = (m[3] - m[1]) / s
+    x = (m[2] + m[6]) / s
+    y = (m[5] + m[7]) / s
+    z = 0.25 * s
+  }
+  return [w, x, y, z]
+}
+
+function matOf(q: number[]): M3 {
+  const [w, x, y, z] = q
+  return [
+    1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y),
+    2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
+    2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y),
+  ]
+}
+
+/** Плавно между двумя положениями: t=0 — лист, t=1 — собранная деталь. */
+export function rigidLerp(a: Rigid, b: Rigid, t: number): Rigid {
+  if (t <= 0) return a
+  if (t >= 1) return b
+  const qa = quatOf(a.m)
+  const qb = quatOf(b.m)
+  let dot = qa.reduce((s, v, i) => s + v * qb[i], 0)
+  const qb2 = dot < 0 ? qb.map((v) => -v) : qb
+  dot = Math.abs(dot)
+  let q: number[]
+  if (dot > 0.9995) {
+    q = qa.map((v, i) => v + (qb2[i] - v) * t)
+  } else {
+    const th = Math.acos(Math.min(1, dot))
+    const s = Math.sin(th)
+    const w1 = Math.sin((1 - t) * th) / s
+    const w2 = Math.sin(t * th) / s
+    q = qa.map((v, i) => v * w1 + qb2[i] * w2)
+  }
+  const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1
+  return {
+    m: matOf(q.map((v) => v / n)),
+    t: [
+      a.t[0] + (b.t[0] - a.t[0]) * t,
+      a.t[1] + (b.t[1] - a.t[1]) * t,
+      a.t[2] + (b.t[2] - a.t[2]) * t,
+    ],
+  }
+}
+
 /** Плоская точка (x, y, 0) -> 3D. */
 export const lift = (p: V2): V3 => [p[0], p[1], 0]
 

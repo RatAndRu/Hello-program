@@ -2,7 +2,7 @@
 
 import {
   Rigid, V2, V3, DEG, cross3, dot3, ensureCCW, len3, lift, m3apply, m3transpose, norm3, rigidApply,
-  rigidId, rigidMul, rigidRotAbout, sub3, polyArea, polyBBox, polyCentroid, bboxUnion,
+  rigidId, rigidLerp, rigidMul, rigidRotAbout, sub3, polyArea, polyBBox, polyCentroid, bboxUnion,
   Box2, Box2 as Box2T,
 } from './vec'
 
@@ -14,6 +14,11 @@ export interface Face {
   /** Полигон в плоскости развёртки, мм, обход против часовой. */
   poly: V2[]
   kind: FaceKind
+  /**
+   * Для деталей из нескольких кусков (островов): где корень острова
+   * оказывается в собранном виде. Без него панель складывается от листа.
+   */
+  home?: Rigid
 }
 
 export interface Hinge {
@@ -89,26 +94,38 @@ export function foldPart(part: Part, t = 1): FoldResult {
     })
   }
 
-  const rootFace = part.faces.find((f) => f.id === root)!
-  place(rootFace, rigidId())
-
-  // Обход в ширину по дереву сгибов: каждый сгиб поворачивает поддерево
-  // вокруг своего ребра.
-  const queue = [root]
-  while (queue.length) {
-    const id = queue.shift()!
-    const parent = placed.get(id)!
-    for (const { hinge, other, angle } of adj.get(id) ?? []) {
-      if (placed.has(other)) continue
-      const child = part.faces.find((f) => f.id === other)
-      if (!child) continue
-      const p0 = rigidApply(parent.tf, lift(hinge.p0))
-      const p1 = rigidApply(parent.tf, lift(hinge.p1))
-      const axis = norm3(sub3(p1, p0))
-      const rot = rigidRotAbout(p0, axis, angle * t)
-      place(child, rigidMul(rot, parent.tf))
-      queue.push(child.id)
+  // Обход по дереву сгибов: каждый сгиб поворачивает поддерево вокруг ребра.
+  const grow = (start: string, tf0: Rigid) => {
+    const startFace = part.faces.find((f) => f.id === start)
+    if (!startFace) return
+    place(startFace, tf0)
+    const queue = [start]
+    while (queue.length) {
+      const id = queue.shift()!
+      const parent = placed.get(id)!
+      for (const { hinge, other, angle } of adj.get(id) ?? []) {
+        if (placed.has(other)) continue
+        const child = part.faces.find((f) => f.id === other)
+        if (!child) continue
+        const p0 = rigidApply(parent.tf, lift(hinge.p0))
+        const p1 = rigidApply(parent.tf, lift(hinge.p1))
+        const axis = norm3(sub3(p1, p0))
+        const rot = rigidRotAbout(p0, axis, angle * t)
+        place(child, rigidMul(rot, parent.tf))
+        queue.push(child.id)
+      }
     }
+  }
+
+  // Острова: корень каждого куска переезжает с листа на своё место в детали.
+  for (const f of part.faces) {
+    if (placed.has(f.id) || !f.home) continue
+    grow(f.id, rigidLerp(rigidId(), f.home, t))
+  }
+  // Остальное — обычное складывание от листа.
+  for (const f of part.faces) {
+    if (placed.has(f.id)) continue
+    grow(f.id, rigidId())
   }
 
   const unplaced = part.faces.filter((f) => !placed.has(f.id)).map((f) => f.id)
@@ -177,6 +194,7 @@ function sameSeg(a0: V3, a1: V3, b0: V3, b1: V3, tol: number): boolean {
 }
 
 export interface Report {
+  islands: number
   faces: number
   panels: number
   tabs: number
@@ -321,6 +339,7 @@ export function inspect(part: Part): Report {
   }
 
   return {
+    islands: countIslands(part),
     faces: part.faces.length,
     panels: part.faces.filter((f) => f.kind === 'panel').length,
     tabs: part.faces.filter((f) => f.kind === 'tab').length,
@@ -380,6 +399,34 @@ export function foldList(part: Part): FoldItem[] {
     })
   }
   return out
+}
+
+/** Сколько отдельных кусков на листе (островов развёртки). */
+export function countIslands(part: Part): number {
+  const adj = new Map<string, string[]>()
+  for (const f of part.faces) adj.set(f.id, [])
+  for (const h of part.hinges) {
+    if (h.seam) continue
+    adj.get(h.a)?.push(h.b)
+    adj.get(h.b)?.push(h.a)
+  }
+  const seen = new Set<string>()
+  let n = 0
+  for (const f of part.faces) {
+    if (seen.has(f.id)) continue
+    n++
+    const stack = [f.id]
+    seen.add(f.id)
+    while (stack.length) {
+      const id = stack.pop()!
+      for (const o of adj.get(id) ?? []) {
+        if (seen.has(o)) continue
+        seen.add(o)
+        stack.push(o)
+      }
+    }
+  }
+  return n
 }
 
 export function netSize(part: Part): V2 {

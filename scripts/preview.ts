@@ -14,6 +14,10 @@ const prompts = [
   'уголок 50x50 длина 400',
   'стакан 90x110 6 гран',
   'крышка 200x150x30',
+  'шар 120 12x8',
+  'кружка 90x110',
+  'бутылка 80x220',
+  'ступенчатая пирамида 160 4 40',
 ]
 
 type Poly = { pts: [number, number][]; fill: string; stroke: string; w: number }

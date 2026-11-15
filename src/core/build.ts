@@ -76,6 +76,23 @@ export class Net {
   }
 }
 
+/** Перенести один лист в другой, сохранив сгибы и положения островов. */
+function mergeNets(dst: Net, src: Net): Map<string, Face> {
+  const map = new Map<string, Face>()
+  for (const f of src.faces) {
+    const c = dst.add(f.poly, f.name, f.kind)
+    if (f.home) c.home = f.home
+    map.set(f.id, c)
+  }
+  for (const h of src.hinges) {
+    const a = map.get(h.a)!
+    const b = map.get(h.b)!
+    const nh = dst.foldAt(a, b, h.p0, h.p1, h.angle)
+    if (h.seam) nh.seam = true
+  }
+  return map
+}
+
 /** Свободно ли место под клапан: проверяем не габарит, а сами точки. */
 function tabIsFree(net: Net, tab: V2[], owner: Face): boolean {
   const bb = polyBBox(tab)
@@ -209,10 +226,10 @@ export function makeTray(w: number, d: number, h: number, opts: BuildOpts, promp
   return finish(net, label, prompt, { w, h, d }, { kind: 'tray', w, d, h })
 }
 
-function ring(radius: number, n: number, z: number): V3[] {
+function ring(radius: number, n: number, z: number, offset = 0): V3[] {
   const pts: V3[] = []
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2
+    const a = (i / n) * Math.PI * 2 + offset
     pts.push([radius * Math.cos(a), radius * Math.sin(a), z])
   }
   return pts
@@ -241,7 +258,14 @@ function fromShell(faces3: Face3[], hinges3: { a: string; b: string }[]): ShellR
     const face = byId.get(sm.a)
     if (face) seams.push({ face, p0: sm.p0, p1: sm.p1 })
   }
-  return { net, warn: unfolded.warning, up: unfolded.up, seams }
+  // Острова: каждый кусок помнит, где он оказывается в собранной детали.
+  for (const isl of unfolded.islands) {
+    const f = byId.get(isl.root)
+    if (f) f.home = isl.home
+  }
+  // Оболочки строятся в мировых координатах с осью Z вверх — деталь
+  // показываем ровно как построили, без доворотa.
+  return { net, warn: unfolded.warning, up: [0, 0, 1] as V3, seams }
 }
 
 /** Труба / обечайка / призма: призматическая оболочка из n фасеток. */
@@ -345,7 +369,8 @@ export function makeFrustum(d1: number, d2: number, h: number, n: number, opts: 
 export function makePyramid(n: number, a: number, h: number, opts: BuildOpts, prompt: string): Part {
   const N = Math.max(3, Math.round(n))
   const R = a / (2 * Math.sin(Math.PI / N))
-  const base = ring(R, N, 0)
+  // Полшага: чтобы у 4-гранной пирамиды грани смотрели по осям, а не углом.
+  const base = ring(R, N, 0, Math.PI / N)
   const apex: V3 = [0, 0, h]
   const faces3: Face3[] = [{ id: 'base', name: 'основание', poly: [...base].reverse() }]
   for (let i = 0; i < N; i++) {
@@ -413,3 +438,221 @@ export function makeCustom(
   return finish(net, 'Своя развёртка', prompt, null, { kind: 'custom' })
 }
 
+
+// ---------------------------------------------------------------- шар дольками
+
+/**
+ * Шар. Развернуть сферу без искажений нельзя (у неё нет нулевой гауссовой
+ * кривизны), поэтому шар режется на дольки-меридианы — как карта глобуса.
+ * Каждая долька разворачивается точно: ширины по параллелям и высоты полос
+ * берутся из 3D-хорд, поэтому при сборке кромки сходятся без зазора, а
+ * площадь совпадает с площадью многогранника. Чем больше долек, тем ближе
+ * к шару: погрешность ~ (1 - sin(x)/x) по площади.
+ */
+export function makeSphere(d: number, gores: number, rows: number, opts: BuildOpts, prompt: string): Part {
+  const R = d / 2
+  const N = Math.max(3, Math.round(gores))
+  const M = Math.max(2, Math.round(rows))
+  const at = (i: number, j: number): V3 => {
+    const lam = (i / N) * Math.PI * 2
+    const phi = -Math.PI / 2 + (j / M) * Math.PI
+    return [R * Math.cos(phi) * Math.cos(lam), R * Math.cos(phi) * Math.sin(lam), R * Math.sin(phi)]
+  }
+  const bottom: V3 = [0, 0, -R]
+  const top: V3 = [0, 0, R]
+  const faces3: Face3[] = []
+  const hinges3: { a: string; b: string }[] = []
+  const bandIds: string[][] = Array.from({ length: M }, () => [])
+
+  for (let i = 0; i < N; i++) {
+    const i2 = (i + 1) % N
+    const name = (k: number) => `долька ${i + 1}.${k + 1}`
+    for (let k = 0; k < M; k++) {
+      let poly: V3[]
+      // низ дольки — треугольник у полюса; обход такой же, как у поясов (наружу)
+      if (k === 0) poly = [bottom, at(i2, 1), at(i, 1)]
+      else if (k === M - 1) poly = [at(i, M - 1), at(i2, M - 1), top]
+      else poly = [at(i, k), at(i2, k), at(i2, k + 1), at(i, k + 1)]
+      const id = `d${i}_${k}`
+      faces3.push({ id, name: name(k), poly })
+      bandIds[k].push(id)
+      if (k > 0) hinges3.push({ a: bandIds[k - 1][i], b: id })
+    }
+  }
+  const { net, warn, up } = fromShell(faces3, hinges3)
+  const label = 'Шар дольками'
+  const area = Math.PI * d * d
+  const meta = { kind: 'sphere', d, n: N, rows: M, area: Math.round(area / 100) }
+  void opts
+  return finish(net, label, prompt, null, meta, warn, up)
+}
+
+// ---------------------------------------------------------------- бутылка
+
+/** Бутылка: дно, цилиндр, плечо-конус, горло и валик. */
+export function makeBottle(d: number, h: number, n: number, opts: BuildOpts, prompt: string): Part {
+  const R = d / 2
+  const N = Math.max(6, Math.round(n))
+  const H = Math.max(40, h)
+  const rNeck = R * 0.34
+  const levels: { r: number; z: number }[] = [
+    { r: R, z: 0 },
+    { r: R, z: H * 0.58 },
+    { r: rNeck, z: H * 0.8 },
+    { r: rNeck, z: H * 0.95 },
+    { r: rNeck * 1.18, z: H },
+  ]
+  const rings = levels.map((l) => ring(l.r, N, l.z))
+  const faces3: Face3[] = []
+  const hinges3: { a: string; b: string }[] = []
+  const bands: string[][] = []
+  for (let b = 0; b < levels.length - 1; b++) {
+    const ids: string[] = []
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N
+      const id = `b${b}_${i}`
+      const name =
+        b === 0 ? `корпус ${i + 1}` : b === 1 ? `плечо ${i + 1}` : b === 2 ? `горло ${i + 1}` : `валик ${i + 1}`
+      faces3.push({ id, name, poly: [rings[b][i], rings[b][j], rings[b + 1][j], rings[b + 1][i]] })
+      ids.push(id)
+      if (i > 0) hinges3.push({ a: ids[i - 1], b: id })
+      if (b > 0) hinges3.push({ a: bands[b - 1][i], b: id })
+    }
+    bands.push(ids)
+  }
+  faces3.push({ id: 'bottom', name: 'дно', poly: [...rings[0]].reverse() })
+  for (let i = 0; i < N; i++) hinges3.push({ a: rings[0] && bands[0][i], b: 'bottom' })
+  const { net, warn, up, seams } = fromShell(faces3, hinges3)
+  addFirstSeamTab(net, opts, seams)
+  return finish(net, 'Бутылка', prompt, null, { kind: 'bottle', d, h: H, n: N }, warn, up)
+}
+
+// ---------------------------------------------------------------- кружка
+
+/** Кружка: обечайка с дном + ручка отдельным куском (её и вырезают отдельно). */
+export function makeMug(d: number, h: number, n: number, withHandle: boolean, opts: BuildOpts, prompt: string): Part {
+  const R = d / 2
+  const N = Math.max(6, Math.round(n))
+  const H = Math.max(30, h)
+  const rings = [ring(R, N, 0), ring(R, N, H)]
+  const faces3: Face3[] = []
+  const hinges3: { a: string; b: string }[] = []
+  const wall: string[] = []
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N
+    const id = `w${i}`
+    faces3.push({ id, name: `стенка ${i + 1}`, poly: [rings[0][i], rings[0][j], rings[1][j], rings[1][i]] })
+    wall.push(id)
+    if (i > 0) hinges3.push({ a: wall[i - 1], b: id })
+  }
+  faces3.push({ id: 'bottom', name: 'дно', poly: [...rings[0]].reverse() })
+  for (let i = 0; i < N; i++) hinges3.push({ a: wall[i], b: 'bottom' })
+  const shell = fromShell(faces3, hinges3)
+  addFirstSeamTab(shell.net, opts, shell.seams)
+  if (!withHandle) {
+    return finish(shell.net, 'Кружка', prompt, null, { kind: 'mug', d, h: H, n: N, handle: 0 }, shell.warn, shell.up)
+  }
+
+  // Ручка: полоса шириной w, согнутая дугой в вертикальной плоскости.
+  const w = Math.min(Math.max(14, H * 0.2), 26)
+  // Эллипс: вылет наружу ~0.4 радиуса, по высоте — около 2/3 кружки.
+  const ra = R * 0.42
+  const rb = H * 0.33
+  const cx = R + ra * 0.57
+  const cz = H * 0.5
+  const steps = 10
+  const a0 = (-125 * Math.PI) / 180
+  const a1 = (125 * Math.PI) / 180
+  const pts: [number, number][] = []
+  for (let k = 0; k <= steps; k++) {
+    const a = a0 + ((a1 - a0) * k) / steps
+    pts.push([cx + ra * Math.cos(a), cz + rb * Math.sin(a)])
+  }
+  const flat: [number, number][] = [[0, 0]]
+  for (let k = 1; k <= steps; k++) {
+    const L = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1])
+    flat.push([flat[k - 1][0] + L, 0])
+  }
+  // Ставим полосу ниже выкройки, чтобы куски не наезжали друг на друга.
+  const shellBox = polyBBox(shell.net.faces.reduce<V2[]>((a, f) => a.concat(f.poly), []))
+  const gapY = shellBox.min[1] - w - 24
+  const merged = new Net()
+  mergeNets(merged, shell.net)
+  let prev: Face | null = null
+  // Знак подобран так, чтобы дуга шла наружу от стенки, а не в неё.
+  const turn = -((a1 - a0) * 180) / Math.PI / steps
+  for (let k = 0; k < steps; k++) {
+    const x0 = flat[k][0]
+    const x1 = flat[k + 1][0]
+    const f = merged.add(rect(shellBox.min[0] + x0, gapY, shellBox.min[0] + x1, gapY + w), `ручка ${k + 1}`)
+    if (prev) merged.foldAt(prev, f, [x0 + shellBox.min[0], gapY], [x0 + shellBox.min[0], gapY + w], turn)
+    prev = f
+  }
+  // Корень ручки: плоская полоса -> дуга в плоскости XZ у стенки кружки.
+  const rootFace = merged.faces.find((f) => f.name === 'ручка 1')!
+  const [ax, az] = pts[0]
+  const [bx, bz] = pts[1]
+  const L0 = Math.hypot(bx - ax, bz - az) || 1
+  const ux = (bx - ax) / L0
+  const uz = (bz - az) / L0
+  rootFace.home = {
+    m: [ux, 0, -uz, 0, 1, 0, uz, 0, ux],
+    t: [ax - ux * shellBox.min[0], -w / 2 - gapY, az - uz * shellBox.min[0]],
+  }
+  return finish(merged, 'Кружка с ручкой', prompt, null, { kind: 'mug', d, h: H, n: N, handle: 1 }, shell.warn, shell.up)
+}
+
+// ---------------------------------------------------------------- ступенчатая пирамида
+
+/** Ступенчатая пирамида: ярусы-коробки, каждый — отдельный кусок листа. */
+export function makeStepPyramid(a: number, tiers: number, tierH: number, opts: BuildOpts, prompt: string): Part {
+  void opts
+  const K = Math.max(2, Math.round(tiers))
+  const h = Math.max(10, tierH)
+  const base = Math.max(40, a)
+  const step = (base / 2) * 0.86 / K
+  const net = new Net()
+  const roots: Face[] = []
+  let x = 0
+  let y = 0
+  const rowLimit = base * 3.2
+  const foot = (w: number) => w + 2 * h + 16
+  const boxes: { w: number; z: number }[] = []
+  for (let k = 0; k < K; k++) {
+    const w = base - 2 * step * k
+    if (k > 0 && x + foot(w) > rowLimit) {
+      x = 0
+      y -= foot(boxes[k - 1].w) + 16
+    }
+    boxes.push({ w, z: k * h })
+    const bottom = net.add(rect(x, y, x + w, y + w), `ярус ${k + 1} · дно`)
+    const sides = [
+      net.add(rect(x, y - h, x + w, y), `ярус ${k + 1} · борт 1`),
+      net.add(rect(x, y + w, x + w, y + w + h), `ярус ${k + 1} · борт 2`),
+      net.add(rect(x - h, y, x, y + w), `ярус ${k + 1} · борт 3`),
+      net.add(rect(x + w, y, x + w + h, y + w), `ярус ${k + 1} · борт 4`),
+    ]
+    for (const s of sides) net.fold(bottom, s, 90)
+    roots.push(bottom)
+    x += foot(w)
+  }
+  // Верхняя плита — отдельный кусок.
+  const topW = boxes[boxes.length - 1].w
+  const topZ = K * h
+  if (x + topW > rowLimit) {
+    x = 0
+    y -= foot(boxes[boxes.length - 1].w) + 16
+  }
+  const cap = net.add(rect(x, y, x + topW, y + topW), 'верхняя плита')
+  roots.push(cap)
+  // Ярусы ставим друг на друга по центру: пирамида, а не лестница.
+  const centred = (f: Face, z: number) => {
+    const c = polyBBox(f.poly)
+    const ox = (c.min[0] + c.max[0]) / 2
+    const oy = (c.min[1] + c.max[1]) / 2
+    f.home = { m: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [-ox, -oy, z] }
+  }
+  for (let k = 0; k < K; k++) centred(roots[k], boxes[k].z)
+  centred(cap, topZ)
+  return finish(net, 'Ступенчатая пирамида', prompt, null, { kind: 'step-pyramid', a: base, tiers: K, h }, [], [0, 0, 1])
+}

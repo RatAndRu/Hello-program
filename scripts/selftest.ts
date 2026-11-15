@@ -1,5 +1,19 @@
 // Самопроверка геометрии: сборка без браузера.
 import { foldPart, inspect, Part } from '../src/core/model'
+import { V3, polyArea } from '../src/core/vec'
+
+/** Площадь плоского многоугольника в 3D. */
+function polyArea3(poly: V3[]): number {
+  let x = 0, y = 0, z = 0
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]
+    const b = poly[(i + 1) % poly.length]
+    x += a[1] * b[2] - a[2] * b[1]
+    y += a[2] * b[0] - a[0] * b[2]
+    z += a[0] * b[1] - a[1] * b[0]
+  }
+  return Math.hypot(x, y, z) / 2
+}
 import { parsePrompt, PromptError } from '../src/core/lang'
 import { defaultOpts } from '../src/core/build'
 
@@ -117,6 +131,57 @@ console.log('== Своя развёртка ==')
   )
   const rep = checkFolded(part, [100, 60, 80], 1.5)
   console.log(`  площадь ${rep.areaMm2} мм²`)
+}
+
+console.log('== Шар дольками ==')
+{
+  const part = build('шар 120 12x8')
+  const rep = inspect(part)
+  ok(rep.islands === 12, `долек-островов 12 (${rep.islands})`)
+  ok(rep.closed, 'шар замкнут: кромки долек сходятся')
+  // Площадь листа сравниваем с идеальной сферой: разница — цена фасеток.
+  const ideal = Math.PI * 120 * 120
+  const k = rep.areaMm2 / ideal
+  ok(k > 0.93 && k <= 1.001, `площадь шара ${(k * 100).toFixed(1)}% от 4πR² (фасетки режут углы)`)
+  near(rep.size[0], 120, 4, 'габарит X')
+  near(rep.size[2], 120, 4, 'габарит Z')
+  // Сумма площадей плоских панелей равна сумме площадей граней в 3D.
+  const flat = part.faces.filter((f) => f.kind === 'panel').reduce((s, f) => s + Math.abs(polyArea(f.poly)), 0)
+  const inSpace = foldPart(part, 1).faces
+    .filter((f) => f.face.kind === 'panel')
+    .reduce((s, f) => s + polyArea3(f.poly3), 0)
+  near(flat, inSpace, flat * 0.002, 'развёртка изометрична (площадь сохраняется)')
+}
+
+console.log('== Кружка с ручкой ==')
+{
+  const part = build('кружка 90x110')
+  const rep = inspect(part)
+  ok(rep.islands === 2, `кружка = 2 куска: обечайка и ручка (${rep.islands})`)
+  near(rep.size[0], 134, 3, 'габарит с ручкой')
+  near(rep.size[2], 110, 1.5, 'высота кружки')
+  // Ручка в собранном виде — дуга у стенки, а не где-то ещё.
+  const h = foldPart(part, 1).faces.filter((f) => f.face.name.startsWith('ручка'))
+  const zs = h.flatMap((f) => f.poly3.map((q) => q[2]))
+  ok(Math.min(...zs) > 5 && Math.max(...zs) < 105, 'ручка стоит по высоте кружки')
+}
+
+console.log('== Бутылка ==')
+{
+  const part = build('бутылка 80x220')
+  const rep = inspect(part)
+  near(rep.size[0], 80, 1.5, 'диаметр')
+  near(rep.size[2], 220, 2, 'высота')
+  ok(rep.folds > 60, `много сгибов по обечайке (${rep.folds})`)
+}
+
+console.log('== Ступенчатая пирамида ==')
+{
+  const part = build('ступенчатая пирамида 160 4 40')
+  const rep = inspect(part)
+  ok(rep.islands === 5, `ярусы отдельными кусками (${rep.islands})`)
+  near(rep.size[0], 160, 2, 'основание')
+  near(rep.size[2], 160, 2, 'высота 4 яруса по 40')
 }
 
 console.log('== Ошибки разбора ==')

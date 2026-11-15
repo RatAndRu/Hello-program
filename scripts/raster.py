@@ -46,7 +46,7 @@ for i, part in enumerate(data):
 # Композит для README: развёртка + сборка рядом
 import os
 os.makedirs('docs/images', exist_ok=True)
-pairs = [(0, 'box'), (3, 'funnel'), (6, 'glass'), (4, 'pyramid')]
+pairs = [(0, 'box'), (3, 'funnel'), (6, 'glass'), (4, 'pyramid'), (8, 'sphere'), (9, 'mug'), (10, 'bottle'), (11, 'step')]
 for idx, slug in pairs:
     if idx >= len(data):
         continue

@@ -161,6 +161,7 @@ function renderReport(r: Report): void {
   rows.push(row('Сгибов', `${r.folds} · ${Math.round(r.totalAngle)}°`))
   rows.push(row('Реза', `${(r.cutMm / 10).toFixed(0)} см`))
   if (r.tabs) rows.push(row('Клапанов', String(r.tabs)))
+  if (r.islands > 1) rows.push(row('Кусков на листе', String(r.islands)))
 
   const badge = r.closed
     ? `<div class="r-badge ok">✓ оболочка замкнута</div>`

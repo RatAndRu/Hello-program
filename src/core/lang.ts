@@ -4,7 +4,8 @@
 import { V2 } from './vec'
 import { Part } from './model'
 import {
-  BuildOpts, makeBox, makeCustom, makeFrustum, makeProfile, makePyramid, makeTray, makeTube,
+  BuildOpts, makeBottle, makeBox, makeCustom, makeFrustum, makeMug, makeProfile, makePyramid,
+  makeSphere, makeStepPyramid, makeTray, makeTube,
 } from './build'
 
 export class PromptError extends Error {}
@@ -64,12 +65,16 @@ function pairs(t: string): number[][] {
 }
 
 const KIND_RULES: { kind: string; words: string[] }[] = [
+  { kind: 'stepped', words: ['ступенчат', 'зиккурат', 'египетск', 'ступени'] },
+  { kind: 'sphere', words: ['шар', 'сфер', 'глобус', 'sphere', 'ball', 'globe'] },
+  { kind: 'bottle', words: ['бутыл', 'флакон', 'bottle'] },
+  { kind: 'mug', words: ['кружк', 'чашк с ручк', 'mug'] },
   { kind: 'profile-z', words: ['z-профиль', 'z профиль', 'зет', 'z-образ', 'z образ'] },
   { kind: 'profile-channel', words: ['швеллер', 'channel', 'п-профиль', 'п профиль'] },
   { kind: 'profile-angle', words: ['уголок', 'уголковый', 'л-профиль', 'l-профиль', 'angle'] },
   { kind: 'frustum', words: ['конус', 'воронк', 'ведро', 'ведерк', 'frustum', 'cone', 'обечайка конус'] },
   { kind: 'pyramid', words: ['пирамид', 'pyramid', 'шатер', 'шатёр'] },
-  { kind: 'glass', words: ['стакан', 'чашк', 'cup', 'кружк'] },
+  { kind: 'glass', words: ['стакан', 'cup', 'бокал'] },
   { kind: 'tube', words: ['труб', 'обечайк', 'цилиндр', 'гильз', 'tube', 'cylinder', 'sleeve', 'призм', 'гран'] },
   { kind: 'box', words: ['коробк', 'короб', 'ящик', 'куб', 'box', 'cube'] },
   { kind: 'lid', words: ['крышк', 'lid', 'cover'] },
@@ -131,7 +136,7 @@ export function parsePrompt(input: string, opts: BuildOpts): Parsed {
   const kind = detectKind(t)
   if (!kind) {
     throw new PromptError(
-      'Не понял, что строить. Начните со слова: коробка, лоток, крышка, труба, стакан, конус, пирамида, призма, уголок, швеллер, z-профиль.',
+      'Не понял, что строить. Начните со слова: коробка, лоток, крышка, труба, стакан, кружка, бутылка, шар, конус, пирамида, ступенчатая пирамида, призма, уголок, швеллер, z-профиль.',
     )
   }
   const all = nums(t)
@@ -212,6 +217,60 @@ export function parsePrompt(input: string, opts: BuildOpts): Parsed {
       const part = makePyramid(n, a, h, o, raw)
       return { part, understood: `пирамида: основание ${Math.round(n)}-угольник со стороной ${fmt(a)} мм, высота ${fmt(h)} мм`, hints }
     }
+    case 'sphere': {
+      const dim = named(t, ['d', 'диаметр', 'диам', 'размер']) ?? all[0] ?? 120
+      const gr = t.match(/(\d+)\s*(?:x|х|на|×)\s*(\d+)\s*(?:дол|гран|сектор|пояс|ряд)?/)
+      const gores = gr ? Math.min(48, Math.max(4, parseInt(gr[1], 10))) : 12
+      const rows = gr ? Math.min(24, Math.max(2, parseInt(gr[2], 10))) : 8
+      const part = makeSphere(dim, gores, rows, o, raw)
+      return {
+        part,
+        understood: `шар Ø${fmt(dim)} мм: ${gores} долек × ${rows} поясов`,
+        hints: [
+          'сферу нельзя развернуть без искажений — шар режется на дольки, как карта глобуса; кромки долек сходятся точно',
+        ],
+      }
+    }
+    case 'bottle': {
+      const d = named(t, ['d', 'диаметр', 'диам']) ?? tr?.v[0] ?? all[0] ?? 80
+      const h = named(t, ['h', 'высота', 'высотой']) ?? tr?.v[1] ?? all[1] ?? 220
+      const seg = named(t, ['гран', 'сегмент']) ?? opts.segments
+      const part = makeBottle(d, h, seg, o, raw)
+      return {
+        part,
+        understood: `бутылка Ø${fmt(d)} × ${fmt(h)} мм, ${Math.round(seg)} фасеток`,
+        hints: ['дно, корпус, плечо-конус, горло и валик — одна развёртка'],
+      }
+    }
+    case 'mug': {
+      const d = named(t, ['d', 'диаметр', 'диам']) ?? tr?.v[0] ?? all[0] ?? 90
+      const h = named(t, ['h', 'высота']) ?? tr?.v[1] ?? all[1] ?? 110
+      const seg = named(t, ['гран', 'сегмент']) ?? Math.max(10, Math.round(opts.segments * 0.66))
+      const handle = !has(t, ['без ручк', 'без ручки'])
+      const part = makeMug(d, h, seg, handle, o, raw)
+      return {
+        part,
+        understood: `кружка Ø${fmt(d)} × ${fmt(h)} мм${handle ? ', с ручкой' : ', без ручки'}`,
+        hints: handle ? ['ручка — отдельный кусок листа, ставится на место при сборке'] : [],
+      }
+    }
+    case 'stepped': {
+      const a = named(t, ['a', 'сторона', 'основание']) ?? all[0] ?? 160
+      const tiers = (() => {
+        const k = all.find((v, i) => i > 0 && Number.isInteger(v) && v >= 2 && v <= 12)
+        return k ?? 4
+      })()
+      const h = (() => {
+        const rest = all.filter((v) => v !== tiers)
+        return named(t, ['h', 'высота яруса', 'ярус']) ?? rest[1] ?? 40
+      })()
+      const part = makeStepPyramid(a, tiers, h, o, raw)
+      return {
+        part,
+        understood: `ступенчатая пирамида: основание ${fmt(a)} мм, ${tiers} яруса по ${fmt(h)} мм`,
+        hints: ['каждый ярус — отдельный кусок листа, ярусы складываются друг на друга'],
+      }
+    }
     case 'profile-angle':
     case 'profile-channel':
     case 'profile-z': {
@@ -263,6 +322,10 @@ export const PRESETS: Preset[] = [
   { title: 'Воронка', prompt: 'воронка 160x40x120 24 гран', group: 'Круглые' },
   { title: 'Конус-колпак', prompt: 'конус-колпак 140x0x160 24 гран', group: 'Круглые' },
   { title: 'Пирамида', prompt: 'пирамида 4 120 140', group: 'Круглые' },
+  { title: 'Шар', prompt: 'шар 120 12x8', group: 'Круглые' },
+  { title: 'Кружка', prompt: 'кружка 90x110', group: 'Круглые' },
+  { title: 'Бутылка', prompt: 'бутылка 80x220', group: 'Круглые' },
+  { title: 'Ступенчатая пирамида', prompt: 'ступенчатая пирамида 160 4 40', group: 'Круглые' },
   { title: 'Уголок', prompt: 'уголок 50x50 длина 400', group: 'Профили' },
   { title: 'Швеллер', prompt: 'швеллер 60x40x60 длина 300', group: 'Профили' },
   { title: 'Z-профиль', prompt: 'z-профиль 30x70x30 длина 500', group: 'Профили' },
