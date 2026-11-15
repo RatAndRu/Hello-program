@@ -93,6 +93,32 @@ class GazeCalibration:
         return float(min(1.0, max(0.0, sx))), float(min(1.0, max(0.0, sy)))
 
     # ------------------------------------------------------------------ #
+    def error(self) -> Tuple[float, float]:
+        """Насколько калибровка «промахивается» на своих же точках.
+
+        Возвращает ``(максимум, среднее)`` в долях экрана. Это честная проверка
+        «адекватности»: если после пяти точек ошибка больше нескольких процентов,
+        значит человек смотрел мимо точки, зрачок перекрывало веко (типично для
+        камеры снизу) или точки упёрлись в предел ±1 и калибровка не спасёт.
+        """
+        if not self.points or not self.ready:
+            return (1.0, 1.0)
+        worst, total = 0.0, 0.0
+        for gx, gy, sx, sy in self.points:
+            px, py = self.apply(gx, gy)
+            dx, dy = abs(px - sx), abs(py - sy)
+            worst = max(worst, dx, dy)
+            total += (dx + dy) / 2.0
+        return (float(worst), float(total / len(self.points)))
+
+    def quality_text(self) -> str:
+        """Короткая строка для журнала: «ошибка 1.4% экрана (5 точек)»."""
+        worst, mean = self.error()
+        if not self.ready:
+            return "калибровки нет"
+        return f"ошибка {mean * 100:.1f}% экрана (макс {worst * 100:.1f}%, точек {len(self.points)})"
+
+    # ------------------------------------------------------------------ #
     def to_dict(self) -> Dict[str, object]:
         return {"points": [[round(v, 5) for v in p] for p in self.points],
                 "coef_x": [round(v, 6) for v in self.coef_x],
@@ -118,6 +144,25 @@ class GazeCalibration:
         if not self.ready:
             return "не калибровано"
         return f"калибровка взгляда: {len(self.points)} точек"
+
+
+def screen_point(fx: float, fy: float, size: Sequence[int],
+                 inset: int = 1) -> Tuple[int, int]:
+    """Доля экрана (0..1) -> пиксель экрана, без «полупиксельных» сдвигов.
+
+    ``0.0`` — первый пиксель, ``1.0`` — последний (``width - 1``), поэтому
+    край экрана достижим ровно, а не «где-то рядом».
+
+    ``inset`` отодвигает от самого края на несколько пикселей: pyautogui считает
+    угловые пиксели аварийной остановкой (FAILSAFE) и на следующем действии
+    бросает исключение. Одного пикселя достаточно, чтобы и край работал, и
+    аварийный стоп не срабатывал.
+    """
+    w, h = int(size[0]), int(size[1])
+    step = max(0, min(int(inset), min(w, h) // 4))
+    x = int(round(float(fx) * (w - 1)))
+    y = int(round(float(fy) * (h - 1)))
+    return (min(max(x, step), w - 1 - step), min(max(y, step), h - 1 - step))
 
 
 class GazeCursor:

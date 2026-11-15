@@ -253,3 +253,97 @@ def test_fullscreen_flag_from_cli(monkeypatch):
     monkeypatch.setattr(cli, "tray_available", lambda: False)
     cli.main(["run", "--fullscreen", "--no-window"])
     assert captured["cfg"].fullscreen is True
+
+
+# --------------------------------------------------------------------------- #
+#  Точная геометрия: холст = окно, пиксель = пиксель
+# --------------------------------------------------------------------------- #
+def test_canvas_matches_window_not_pointer_space(monkeypatch):
+    """Холст берётся из окна, а не из «настроек мыши» — иначе всё «раздувается».
+
+    На экране с масштабом 125% система мыши говорит 1536×864, а окно на весь
+    экран — 1920×1080. Раньше холст рисовался 1536×864 и растягивался окном,
+    теперь холст ровно 1920×1080 и не масштабируется.
+    """
+    monkeypatch.setattr(cv2, "getWindowImageRect", lambda name: (0, 0, 1920, 1080))
+    app = _app()
+    app.backend.size = (1536, 864)              # «логический» размер системы мыши
+    app.backend.size = (1536, 864)
+    app.start_gaze_calibration()
+    canvas = app.calibration_canvas()
+    assert canvas.shape[:2] == (1080, 1920)
+    assert "1920×1080" in app.state.calib_debug
+    assert "1536×864" in app.state.calib_debug
+
+
+def test_canvas_uses_window_size_even_if_not_fullscreen(monkeypatch):
+    monkeypatch.setattr(cv2, "getWindowImageRect", lambda name: (0, 0, 1600, 900))
+    app = _app()
+    app.backend.size = (1920, 1080)
+    app.start_gaze_calibration()
+    canvas = app.calibration_canvas()
+    assert canvas.shape[:2] == (900, 1600)
+    assert "окно меньше экрана" in app.state.calib_debug
+
+
+def test_corner_marker_touches_last_pixel():
+    """Прицел стоит в самом угловом пикселе, а не «около»."""
+    img = render_gaze_calibration((1920, 1080), _state((1.0, 1.0)))
+    mask = _green_mask(img)
+    assert mask[1079, 1919], "правый нижний угловой пиксель должен быть зелёным"
+    assert not mask[0, 0], "а левый верхний — нет: прицел в правом нижнем"
+
+    img = render_gaze_calibration((1920, 1080), _state((0.0, 0.0)))
+    mask = _green_mask(img)
+    assert mask[0, 0], "левый верхний угловой пиксель"
+    assert not mask[1079, 1919]
+
+
+def test_screen_point_is_exact_edge_to_edge():
+    from airmouse.gaze import screen_point
+
+    assert screen_point(0.0, 0.0, (1920, 1080), inset=0) == (0, 0)
+    assert screen_point(1.0, 1.0, (1920, 1080), inset=0) == (1919, 1079)
+    assert screen_point(0.5, 0.5, (1920, 1080), inset=0) == (960, 540)
+    # с запасом в 1 пиксель: край достижим, но аварийный угол pyautogui не задет
+    assert screen_point(0.0, 0.0, (1920, 1080)) == (1, 1)
+    assert screen_point(1.0, 1.0, (1920, 1080)) == (1918, 1078)
+
+
+def test_gaze_pointer_can_reach_far_edge_but_not_failsafe_corner():
+    """Взгляд в угол ставит курсор в последний пиксель, не в (0,0)."""
+    from airmouse.gaze import GazeCalibration
+
+    app = _app()
+    app.backend.size = (1920, 1080)
+    calib = GazeCalibration()
+    for gx, gy, sx, sy in ((0, 0, 0, 0), (1, 0, 1, 0), (1, 1, 1, 1), (0, 1, 0, 1), (.5, .5, .5, .5)):
+        calib.add(gx, gy, sx, sy)
+    assert calib.fit() and calib.ready
+    app.gaze_calib = calib
+    app.cfg.face.gaze_absolute = True
+    app.gaze_cursor = __import__("airmouse.gaze", fromlist=["GazeCursor"]).GazeCursor(
+        deadzone_px=0, alpha=1.0)
+    app.face_fsm.gaze_valid = True
+    app._metrics = object()
+
+    app.face_fsm.gaze_x, app.face_fsm.gaze_y = 1.0, 1.0
+    events = app._gaze_pointer_events(1.0)
+    point = events[-1].value
+    assert point == (1918, 1078), point
+
+    app.face_fsm.gaze_x, app.face_fsm.gaze_y = 0.0, 0.0
+    events = app._gaze_pointer_events(2.0)
+    assert events[-1].value == (1, 1), events[-1].value
+
+
+def test_corner_arms_are_flush_with_screen_edges():
+    """«Г» прижата к краям: линии видны по всей толщине, внешняя кромка — край."""
+    img = render_gaze_calibration((1920, 1080), _state((1.0, 0.0)))
+    mask = _green_mask(img)
+    # вдоль правого края — вертикальная линия от угла вниз
+    assert mask[:100, 1919].sum() > 80
+    assert mask[:100, 1915].sum() > 80
+    # вдоль верхнего края — горизонтальная от угла влево
+    assert mask[0, 1820:1919].sum() > 80
+    assert mask[5, 1820:1919].sum() > 80

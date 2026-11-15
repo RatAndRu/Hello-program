@@ -260,3 +260,54 @@ def test_gaze_calibrate_button_calls_hook():
     action = panel.on_mouse(1, bx + bw // 2, by + bh // 2)   # LBUTTONDOWN
     assert called.get("done")
     assert action == "save"
+
+
+# --------------------------------------------------------------------------- #
+#  Качество калибровки: честная проверка «адекватности»
+# --------------------------------------------------------------------------- #
+def test_error_is_zero_on_exact_points():
+    calib = _calibrated()
+    worst, mean = calib.error()
+    assert worst < 0.01 and mean < 0.01
+    assert "ошибка" in calib.quality_text()
+
+
+def test_error_grows_when_points_do_not_fit():
+    """Точки «не по местам» — калибровка честно говорит, что промахивается."""
+    calib = GazeCalibration()
+    for i, (sx, sy) in enumerate(CALIBRATION_TARGETS):
+        gx, gy = gaze_for(sx, sy)
+        # на одной точке зрачок «уехал»: человек смотрел мимо или веко мешало
+        if i == 2:
+            gx, gy = gaze_for(0.5, 0.5)
+        calib.add(gx, gy, sx, sy)
+    assert calib.fit()
+    worst, mean = calib.error()
+    assert worst > 0.08
+    assert "макс" in calib.quality_text()
+
+
+def test_uneasy_calibration_warns_user():
+    app = _app()
+    app.start_gaze_calibration()
+    for sx, sy in CALIBRATION_TARGETS:
+        _look(app, sx, sy)
+        app.confirm_gaze_point()
+    text = app._events_log[0]
+    assert "калибровка взгляда готова" in text
+    assert "ошибка" in text
+
+
+def test_bad_calibration_is_reported_as_bad():
+    """Смотрели всё время в центр — калибровка так и говорит: промах 50%."""
+    app = _app()
+    app.start_gaze_calibration()
+    app.face_fsm.gaze_valid = True
+    app.face_fsm.gaze_x = app.face_fsm.gaze_y = 0.0
+    for _ in CALIBRATION_TARGETS:
+        for _ in range(5):
+            app._collect_gaze_sample()
+        app.confirm_gaze_point()
+    assert any("калибровка неточная" in line for line in app._events_log)
+    worst, _mean = app.gaze_calib.error()
+    assert worst > 0.08

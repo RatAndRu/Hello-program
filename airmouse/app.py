@@ -19,6 +19,7 @@ from . import keys
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
 from .gaze import (
+    screen_point,
     CALIBRATION_TARGETS,
     TARGET_TITLES,
     GazeCalibration,
@@ -162,6 +163,8 @@ class AirMouseApp:
         # что уже применено к окну; False — обычное окно при старте
         self._fullscreen_applied: Optional[bool] = False
         self._screen_size_cache: Optional[Tuple[int, int]] = None
+        self._fit_last_try = 0.0
+        self._fit_tries = 0
 
     # ------------------------------------------------------------------ #
     def setup(self) -> None:
@@ -264,6 +267,7 @@ class AirMouseApp:
         """Окно предпросмотра на весь экран (клавиша F)."""
         self._fullscreen = not self._fullscreen
         self._fullscreen_applied = None
+        self._fit_tries = 0
         log.info("Окно: %s", "на весь экран" if self._fullscreen else "в окне")
         return self._fullscreen
 
@@ -275,6 +279,8 @@ class AirMouseApp:
         """
         want = bool(self._fullscreen or self.calibrating)
         if want == self._fullscreen_applied:
+            if want:
+                self._fit_window_to_screen()
             return
         self._fullscreen_applied = want
         try:
@@ -297,10 +303,67 @@ class AirMouseApp:
                 except Exception:
                     pass
 
+    def window_rect(self) -> Optional[Tuple[int, int, int, int]]:
+        """Где на экране реально лежит картинка окна: (x, y, ширина, высота)."""
+        try:
+            x, y, w, h = cv2.getWindowImageRect(self._window_name)
+        except Exception:
+            return None
+        if int(w) <= 0 or int(h) <= 0:
+            return None
+        return int(x), int(y), int(w), int(h)
+
+    def _fit_window_to_screen(self) -> None:
+        """Догоняет окно до всего экрана: система не всегда даёт полный экран.
+
+        Проверяем реальный прямоугольник картинки. Если окно меньше монитора
+        (панель задач, другой бэкенд, DPI), повторяем попытку — но не чаще
+        раза в секунду и не больше трёх раз, чтобы не мигать.
+        """
+        rect = self.window_rect()
+        if rect is None:
+            return
+        sw, sh = self.screen_size()
+        x, y, w, h = rect
+        if x == 0 and y == 0 and w >= sw and h >= sh:
+            return
+        now = time.monotonic()
+        if now - self._fit_last_try < 1.0 or self._fit_tries >= 3:
+            return
+        self._fit_last_try = now
+        self._fit_tries += 1
+        try:
+            cv2.setWindowProperty(self._window_name, cv2.WND_PROP_FULLSCREEN,
+                                  cv2.WINDOW_FULLSCREEN)
+            cv2.resizeWindow(self._window_name, sw, sh)
+            cv2.moveWindow(self._window_name, 0, 0)
+        except Exception as exc:
+            log.debug("Окно не удалось растянуть на весь экран: %s", exc)
+
     def calibration_canvas(self) -> np.ndarray:
-        """Чёрный экран на весь монитор с прицелом в настоящем углу экрана."""
-        size = self.screen_size()
-        return render_gaze_calibration(size, self.state)
+        """Холст ровно по размеру окна; прицел — в настоящем пикселе экрана.
+
+        Важно: холст рисуется в размере **окна**, а не в размере, который
+        сообщает система мыши. Иначе картинка масштабируется окном (на экране с
+        масштабом 125% всё «раздувается» на четверть), и прицел уезжает с угла.
+        """
+        sw, sh = self.screen_size()
+        rect = self.window_rect()
+        if rect is None:
+            # размер окна не спросить — рисуем «как есть», без масштабирования
+            self.state.calib_debug = f"холст {sw}×{sh} (размер окна неизвестен)"
+            return render_gaze_calibration((sw, sh), self.state)
+        wx, wy, ww, wh = rect
+        note = ""
+        if ww != sw or wh != sh or wx or wy:
+            # окно не покрыло монитор: прицел будет чуть внутри края
+            note = " · окно меньше экрана (нажмите F)"
+        elif ww < 1000:
+            note = ""
+        self.state.calib_debug = (
+            f"экран {sw}×{sh} · окно {ww}×{wh} · холст {ww}×{wh}{note}"
+        )
+        return render_gaze_calibration((ww, wh), self.state)
 
     # ------------------------------------------------------------------ #
     def _two_hand_relax(self) -> float:
@@ -627,7 +690,9 @@ class AirMouseApp:
                 and self.face_fsm.gaze_valid and self._metrics is not None):
             sx, sy = self.gaze_calib.apply(self.face_fsm.gaze_x, self.face_fsm.gaze_y)
             width, height = self.backend.screen_size()
-            point = self.gaze_cursor.update(sx * width, sy * height)
+            # 0 -> первый пиксель, 1 -> последний: край экрана достижим ровно
+            px, py = screen_point(sx, sy, (width, height))
+            point = self.gaze_cursor.update(px, py)
             if point is None:
                 return []
             x, y = point
@@ -715,9 +780,17 @@ class AirMouseApp:
         self.gaze_cursor.reset()
         self.cfg.face.gaze_calibration = calib.to_dict()
         self.cfg.face.gaze_absolute = True
-        text = f"калибровка взгляда готова: {len(calib.points)} точек"
+        worst, mean = calib.error()
+        text = f"калибровка взгляда готова: {len(calib.points)} точек, {calib.quality_text()}"
         self._events_log.appendleft(text)
-        log.info("Калибровка взгляда: %d точек", len(calib.points))
+        log.info("Калибровка взгляда: %d точек, %s", len(calib.points), calib.quality_text())
+        if worst > 0.08:
+            # пять точек разошлись: скорее всего смотрели мимо или веко мешало
+            warn = ("калибровка неточная (промах до "
+                    f"{worst * 100:.0f}% экрана) — повторите её, глядя точно в уголок")
+            self._events_log.appendleft(warn)
+            self.state.backend_note = warn[:64]
+            log.warning("%s", warn)
         return text
 
     def reset_gaze_calibration(self) -> str:
@@ -774,7 +847,10 @@ class AirMouseApp:
             mode = "телепорт" if (self.cfg.face.gaze_absolute and self.gaze_calib.ready) else "скоростной"
             return f"взгляд: {where} · мышь глазами ВКЛ ({mode})"
         if self.gaze_calib.ready:
-            return f"взгляд: {where} · калибровка есть (G — включить)"
+            worst, _mean = self.gaze_calib.error()
+            mark = "⚠ " if worst > 0.08 else ""
+            return (f"взгляд: {where} · {mark}калибровка есть "
+                    f"(промах {worst * 100:.0f}%, G — включить)")
         return f"взгляд: {where} · B — калибровка взгляда"
 
     def _expression_text(self) -> str:

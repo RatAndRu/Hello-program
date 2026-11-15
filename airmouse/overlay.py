@@ -148,6 +148,7 @@ class OverlayState:
     calib_target: Optional[Sequence[float]] = None   # куда просим посмотреть
     calib_text: str = ""             # «ВЗГЛЯД: левый верхний угол (1/5)…»
     calib_done: int = 0              # сколько точек калибровки уже снято
+    calib_debug: str = ""            # «экран 1920×1080 · холст 1920×1080»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
     hints: str = "Q выход P пауза H голова G глаза B взгляд C настройки V режимы K ладонь F экран M движок I справка"
@@ -439,21 +440,22 @@ def _draw_gaze_calibration(img: np.ndarray, state: OverlayState, k: float) -> No
 
 def render_gaze_calibration(size: Tuple[int, int],
                             state: OverlayState) -> np.ndarray:
-    """Полноэкранный экран калибровки взгляда — на весь монитор, а не в окне.
+    """Полноэкранный экран калибровки взгляда — пиксель в пиксель с окном.
 
-    Прицел рисуется в настоящих координатах экрана (``size`` — разрешение
-    монитора), поэтому крестик оказывается ровно в углу монитора, а не внутри
-    окошка предпросмотра. Фон чёрный: смотреть нужно в точку, а не на панели.
+    ``size`` — размер **холста ровно как у окна** (``cv2.getWindowImageRect``).
+    Это принципиально: если нарисовать холст «по размеру из настроек мыши», то
+    окно на экране с масштабом 125% растянет картинку — всё станет крупнее, а
+    прицел уедет с угла. Здесь холст и картинка в окне совпадают 1:1, поэтому
+    прицел рисуется в самом угловом пикселе экрана.
     """
     w, h = max(int(size[0]), 320), max(int(size[1]), 240)
     img = np.full((h, w, 3), (16, 17, 20), dtype=np.uint8)
-    # еле заметная рамка — видно, что оверлей растянут на весь экран
-    cv2.rectangle(img, (0, 0), (w - 1, h - 1), (48, 50, 56), 2)
+    # рамка по краю: видно, где кончается экран
+    cv2.rectangle(img, (0, 0), (w - 1, h - 1), (48, 50, 56), 1)
 
     k = max(min(h / 1080.0, w / 1920.0), 0.55)
-    tx, ty = 0, 0
     if state.calib_target is not None:
-        # именно пиксель экрана: 0 -> 0, 1 -> последний пиксель
+        # доля экрана -> пиксель холста: 0 -> 0, 1 -> последний пиксель
         tx = int(round(float(state.calib_target[0]) * (w - 1)))
         ty = int(round(float(state.calib_target[1]) * (h - 1)))
         _draw_calibration_target(img, tx, ty, k)
@@ -471,32 +473,37 @@ def render_gaze_calibration(size: Tuple[int, int],
     hw, _ = T.measure(hint, hint_size)
     T.draw(img, hint, (w // 2 - hw // 2, by + height + int(20 * k)), hint_size, DIM)
 
-    # прогресс: сколько точек уже снято
+    # прогресс и точные размеры — чтобы можно было проверить глазами
     _draw_calibration_progress(img, state, k)
+    debug = state.calib_debug or f"холст {w}×{h}"
+    dbg_size = int(11 * k)
+    dw, _dh = T.measure(debug, dbg_size)
+    T.draw(img, debug, (w // 2 - dw // 2, h - int(30 * k)), dbg_size, (110, 112, 120))
     return img
 
 
 def _draw_calibration_target(img: np.ndarray, tx: int, ty: int, k: float) -> None:
-    """Прицел в точке экрана: уголки вдоль краёв монитора или кольцо в центре."""
+    """Прицел в точке экрана: «Г» по самым краям монитора или кольцо в центре."""
     h, w = img.shape[:2]
     color = (90, 235, 130)
     arm = int(min(max(min(w, h) * 0.10, 60.0), 160.0) * k)
-    thick = max(int(5 * k), 2)
-    pad = thick + int(2 * k)          # линии чуть внутри экрана, чтобы не обрезались
+    thick = max(int(7 * k), 3)
 
     at_left, at_right = tx <= 4, tx >= w - 5
     at_top, at_bottom = ty <= 4, ty >= h - 5
     corner = (at_left or at_right) and (at_top or at_bottom)
     if corner:
-        # «Г» точно в углу монитора: две линии вдоль самых краёв экрана
-        x_edge = pad if at_left else w - 1 - pad
-        y_edge = pad if at_top else h - 1 - pad
+        # Линии «Г» лежат вплотную к краю: их внешняя кромка — ровно край
+        # экрана, а толщина целиком видна (сдвиг на полтолщины внутрь).
+        half = thick // 2
+        x_edge = half if at_left else w - 1 - half
+        y_edge = half if at_top else h - 1 - half
         x_in = x_edge + arm if at_left else x_edge - arm
         y_in = y_edge + arm if at_top else y_edge - arm
         cv2.line(img, (x_edge, y_edge), (x_in, y_edge), color, thick, cv2.LINE_AA)
         cv2.line(img, (x_edge, y_edge), (x_edge, y_in), color, thick, cv2.LINE_AA)
-        # точка ровно в пикселе-цели (у края она видна квадрантом)
-        cv2.circle(img, (tx, ty), max(int(5 * k), 3), color, -1, cv2.LINE_AA)
+        # яркая точка ровно в угловом пикселе (у края видна квадрантом)
+        cv2.circle(img, (tx, ty), max(int(6 * k), 3), color, -1, cv2.LINE_AA)
         return
 
     r = int(34 * k)
@@ -517,7 +524,7 @@ def _draw_calibration_progress(img: np.ndarray, state: OverlayState, k: float) -
     r = max(int(7 * k), 4)
     gap = int(26 * k)
     h, w = img.shape[:2]
-    y = h - int(46 * k)
+    y = h - int(58 * k)
     x = w // 2 - (total - 1) * gap // 2
     for i in range(total):
         color = (90, 235, 130) if i < done else (90, 92, 100)
