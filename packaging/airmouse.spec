@@ -6,6 +6,10 @@
 import os
 import sys
 
+# UPX заметно уменьшает DLL, но повышает риск ложных срабатываний антивирусов,
+# поэтому включается только по запросу: AIRMOUSE_UPX=1.
+USE_UPX = os.environ.get("AIRMOUSE_UPX", "") == "1"
+
 sys.setrecursionlimit(20000)  # mediapipe/hooks иногда уходят в глубокую рекурсию
 
 from PyInstaller.utils.hooks import collect_all
@@ -95,7 +99,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=USE_UPX,
     console=False,          # окна консоли нет; об ошибках сообщает MessageBox
     disable_windowed_traceback=False,
     icon=None,
@@ -112,7 +116,7 @@ exe_debug = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=USE_UPX,
     console=True,
 )
 
@@ -122,6 +126,6 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=False,
+    upx=USE_UPX,
     name="AirMouse",
 )

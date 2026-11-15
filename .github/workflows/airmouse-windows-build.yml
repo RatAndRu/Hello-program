@@ -5,6 +5,11 @@ name: AirMouse — сборка Windows EXE
 # (ручной запуск работает, когда файл воркфлоу есть и в ветке по умолчанию).
 on:
   workflow_dispatch:
+    inputs:
+      upx:
+        description: "Сжать DLL через UPX (меньше архив, но выше риск ложных срабатываний антивируса)"
+        type: boolean
+        default: false
   push:
     tags:
       - 'airmouse-v*'
@@ -78,7 +83,15 @@ jobs:
             exit 1
           fi
 
+      - name: UPX (по запросу)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.upx }}
+        run: |
+          choco install upx -y --no-progress
+          upx --version | head -1
+
       - name: Сборка EXE
+        env:
+          AIRMOUSE_UPX: ${{ (github.event_name == 'workflow_dispatch' && inputs.upx) && '1' || '0' }}
         run: |
           set +e
           python -m PyInstaller --noconfirm --clean packaging/airmouse.spec > build.log 2>&1
