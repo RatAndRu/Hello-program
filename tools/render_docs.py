@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.19.0",
+        version="0.20.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -96,6 +96,15 @@ def main() -> int:
     save(overlay.render(background(), st, hands=[left, right], face=None, primary=0),
          "overlay-two-hands.png")
 
+    # 4б. Кисть не читается (ребром) — рисуем предсказание пунктиром
+    edge = synthetic_hand(center=(0.60, 0.62), scale=0.24, yaw_deg=78)
+    st = state(pose="—", expression="нейтрально", hand_count=1,
+               hand_predicted=True,
+               hand_note="кисть ребром: поза не измеряется",
+               side_text="кисть: предсказано по движению")
+    save(overlay.render(background(), st, hands=[edge], face=None, predicted=[True]),
+         "overlay-hand-predicted.png")
+
     # 5. Настройки с ползунками (клавиша C)
     from airmouse.settings_ui import SettingsPanel
 
@@ -115,6 +124,11 @@ def main() -> int:
     save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8),
                     live="сейчас: тело видно целиком · глубина 0%   29 кадр/с"),
          "overlay-settings-body.png")
+
+    panel.goto_page(6)                     # страница «Окно и рука»
+    save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8),
+                    live="сейчас: кисть предсказана (1)   29 кадр/с"),
+         "overlay-settings-window.png")
 
     # 6. Калибровка взгляда: красная точка ползёт по экрану, за ней след
     from airmouse.gaze import PURSUIT_DURATION_S, pursuit_point

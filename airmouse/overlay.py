@@ -152,6 +152,8 @@ class OverlayState:
     side_text: str = ""              # «сторона кисти: ладонь / тыл»
     gaze_pointer: bool = False       # курсор двигают глаза (зрачки)
     gaze_text: str = ""              # «взгляд: вправо · мышь глазами ВКЛ»
+    hand_note: str = ""              # «рука предсказана (2)» / «физика пальцев: …»
+    hand_predicted: bool = False     # главная кисть нарисована предсказанием
     body_text: str = ""              # «тело: стоит · приседаний 3»
     body_enabled: bool = False       # режим тела включён (иначе «тело: выключено»)
     body_where: str = ""             # «видно целиком» / «видно по пояс»
@@ -319,12 +321,46 @@ def draw_body_ar(
     return drawn
 
 
+def _dashed_line(img, p1, p2, color, thick: int = 1, dash: int = 6) -> None:
+    """Пунктирная линия — «это догадка, а не измерение»."""
+    x1, y1 = int(p1[0]), int(p1[1])
+    x2, y2 = int(p2[0]), int(p2[1])
+    length = max(int(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5), 1)
+    step = max(dash, 3)
+    for start in range(0, length, step * 2):
+        t0, t1 = start / length, min((start + step) / length, 1.0)
+        a = (int(x1 + (x2 - x1) * t0), int(y1 + (y2 - y1) * t0))
+        b = (int(x1 + (x2 - x1) * t1), int(y1 + (y2 - y1) * t1))
+        if a != b:
+            cv2.line(img, a, b, color, thick, cv2.LINE_AA)
+
+
+def draw_arm_hint(img: np.ndarray, hand: Hand, color=(120, 200, 120),
+                  thick: int = 3) -> None:
+    """Дорисовать предплечье за запястьем: рука читается как рука, а не кисть-обрубок.
+
+    Направление — от центра ладони через запястье, длина — примерно две ладони.
+    Это подсказка, поэтому пунктиром.
+    """
+    h, w = img.shape[:2]
+    wrist = hand.xy(0) * np.array([w, h])
+    palm = hand.palm_center * np.array([w, h])
+    out = wrist - palm
+    norm = float(np.linalg.norm(out))
+    if norm < 1e-6:
+        return
+    out = out / norm
+    end = wrist + out * max(float(hand.palm_size) * min(w, h) * 2.0, 24.0)
+    _dashed_line(img, wrist, end, color, thick, dash=max(int(thick * 2), 4))
+
+
 def draw_hand_ar(
     img: np.ndarray,
     hand: Hand,
     dim: bool = False,
     show_names: bool = True,
     pinch_threshold: float = 0.32,
+    predicted: bool = False,
 ) -> None:
     """AR-«полосы» вдоль пальцев + контур ладони + индикатор щипка."""
     h, w = img.shape[:2]
@@ -333,12 +369,15 @@ def draw_hand_ar(
     thick = int(np.clip(scale * 0.17, 4, 16))
 
     for finger, chain in FINGERS.items():
-        color = DIM if dim else FINGER_COLORS[finger]
+        color = DIM if (dim or predicted) else FINGER_COLORS[finger]
         # у большого пальца цепочка начинается с CMC — иначе тянется лишняя
         # диагональ через всю ладонь
         joints = tuple(chain)
         for a, b in zip(joints[:-1], joints[1:]):
-            cv2.line(img, tuple(pts[a]), tuple(pts[b]), color, thick, cv2.LINE_AA)
+            if predicted:      # предсказание рисуем пунктиром: видно, что это догадка
+                _dashed_line(img, pts[a], pts[b], color, max(thick // 2, 1))
+            else:
+                cv2.line(img, tuple(pts[a]), tuple(pts[b]), color, thick, cv2.LINE_AA)
             cv2.circle(img, tuple(pts[a]), max(thick // 2, 2), color, -1, cv2.LINE_AA)
         tip = tuple(pts[chain[-1]])
         cv2.circle(img, tip, max(thick // 2, 2), color, -1, cv2.LINE_AA)
@@ -475,6 +514,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
         extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
     if state.body_text:             # поза тела и счёт упражнений
         extras.append((state.body_text, INFO))
+    if state.hand_note:             # кисть: предсказание или поправка физики
+        extras.append((state.hand_note, WARN if state.hand_predicted else INFO))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
         extras.append((state.roles_text, ACCENT))
     if state.settings_open:
@@ -488,7 +529,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     panel_w = min(text_w + int(24 * k), int(0.56 * img.shape[1]))
     n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
                + int(bool(state.gaze_text)) + int(bool(state.roles_text))
-               + int(bool(state.body_text)) + int(state.settings_open))
+               + int(bool(state.body_text)) + int(bool(state.hand_note))
+               + int(state.settings_open))
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -845,6 +887,7 @@ def render(
     primary: int = 0,
     body=None,
     body_min_visibility: float = 0.35,
+    predicted: Optional[List[bool]] = None,
 ) -> np.ndarray:
     img = frame.copy()
     h, w = img.shape[:2]
@@ -875,11 +918,30 @@ def render(
     if body is not None:
         draw_body_ar(img, body, min_visibility=body_min_visibility)
 
+    is_predicted = list(predicted or [])
     for i, hand in enumerate(hands or []):
         secondary = i != primary
+        predicted_hand = bool(is_predicted[i]) if i < len(is_predicted) else False
+        # у предсказанной кисти не подписываем пальцы: подписи по догадке
+        # только путают, человек и так видит, что поза приблизительная
         draw_hand_ar(img, hand, dim=state.paused or secondary,
-                     show_names=state.show_names and not secondary,
-                     pinch_threshold=state.pinch_threshold)
+                     show_names=state.show_names and not secondary and not predicted_hand,
+                     pinch_threshold=state.pinch_threshold,
+                     predicted=predicted_hand)
+        # предплечье: кисть без руки выглядит обрубком, а вместе с ним читается
+        # как рука — особенно когда она «доехала» из предсказания
+        draw_arm_hint(img, hand,
+                      color=WARN if predicted_hand else (110, 170, 110),
+                      thick=int(3 * k))
+        if predicted_hand:
+            # подпись над кистью: внутри ладони она закрывала точки
+            pts = hand.to_pixels(w, h)
+            text = "предсказано: кисти не видно"
+            width, _ = T.measure(text, int(12 * k))
+            top = int(pts[:, 1].min() - 22 * k)
+            centre = int(pts[:, 0].mean() - width / 2)
+            _label(img, text, (centre, max(top, int(8 * k))),
+                   int(12 * k), WARN, alpha=0.5)
         if secondary:  # вторая рука курсор не двигает — только нажатия
             pts = hand.to_pixels(w, h)
             anchor = pts[MIDDLE_MCP].astype(int)
@@ -914,6 +976,7 @@ def render(
     if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
         n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
                    + int(bool(state.gaze_text)) + int(bool(state.roles_text))
+                   + int(bool(state.body_text)) + int(bool(state.hand_note))
                    + int(state.settings_open))
         hint_y = int((12 + 104 + 30 * n_extra + 8) * k)
         _label(img, state.two_hand_hint, (int(12 * k), hint_y),

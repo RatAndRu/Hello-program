@@ -8,7 +8,7 @@ import time
 from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -19,6 +19,8 @@ from .camera import ThreadedCamera
 from . import keys
 from .config import AppConfig, resolve_path, save_config
 from .face import FaceFSM, FaceMetrics, measure_face
+from .handphysics import HandPhysics
+from .handtrack import HandTracker, is_edge_on
 from .profile import MotionProfile, MotionWizard
 from .gaze import (
     screen_point,
@@ -34,7 +36,7 @@ from .gaze import (
     pursuit_metrics,
     pursuit_point,
 )
-from .body import BodyFSM, measure_body
+from .body import BodyFSM, BodySmoother, arm_points, measure_body
 from .headpose import HeadPoseEstimator
 from .gestures import (
     SIDE_TITLES_RU,
@@ -144,6 +146,19 @@ class AirMouseApp:
         self._gaze_drift_at = -1e9              # когда говорили «лицо уехало, калибруй»
         self._gaze_track: deque = deque(maxlen=30)   # куда смотрели (для дрожания)
         self._body_points = None                # последние 33 точки тела (для скелета)
+        # Трекер кисти и физика пальцев: рука не пропадает на пару кадров, а
+        # пальцы не выгибаются так, как анатомически невозможно.
+        self.hand_tracker = HandTracker(
+            predict_frames=int(getattr(cfg.hand, "predict_frames", 6)),
+            use_body=bool(getattr(cfg.hand, "predict_use_body", True)),
+        )
+        self._physics: Dict[int, HandPhysics] = {}
+        self._predicted_hands: List[bool] = []
+        self._hands_draw: List = []         # кисти для окна (с предсказаниями)
+        self._hand_notes: List[str] = []
+        self.body_smoother = BodySmoother(
+            min_visibility=float(getattr(cfg.body, "min_visibility", 0.5)),
+        )
         self._body_want: Optional[bool] = None  # с каким «хочу тело» создан движок
         self.motion_wizard: Optional[MotionWizard] = None
         self._motion_at = 0.0                   # время прошлого кадра профиля
@@ -200,6 +215,9 @@ class AirMouseApp:
         self._fit_last_try = 0.0
         self._fit_tries = 0
         self._fit_series = 0                    # сколько серий попыток уже было
+        self._window_sized = False              # окно уже получило стартовый размер
+        self._preview_cache: Optional[Tuple[int, int]] = None
+        self._preview_at = 0.0
         # Куда сохранять настройки. None — путь по умолчанию (~/.airmouse/config.json);
         # autosave включается в командной строке, чтобы тесты и demo ничего не писали.
         self.config_path: Optional[Path] = None
@@ -291,6 +309,71 @@ class AirMouseApp:
             return []
         return events
 
+    def _track_hands(self, hands, now: float, body) -> List:
+        """Трекер кисти + физика пальцев: непрерывность и правдоподобность.
+
+        Зачем: кисть, повёрнутая ребром, и кисть, прикрытая другой рукой, читаются
+        плохо — нейросеть то теряет её на пару кадров, то выгибает пальцы так,
+        как человек их выгнуть не может. Трекер продолжает движение по скорости
+        предыдущих кадров (и подтягивает кисть к запястью из тела, если оно
+        видно), а физика поправляет невозможные позы.
+
+        Возвращает кисти **для жестов** — только реально измеренные. Отдельно
+        готовится список для отрисовки: там есть и предсказанные кисти, и
+        поправленные физикой пальцы. Жесты сознательно не строятся на
+        предсказаниях: выдуманная рука не должна нажимать кнопки.
+        """
+        self._predicted_hands = []
+        self._hand_notes = []
+        if not hands and not bool(getattr(self.cfg.body, "enabled", False)):
+            self.hand_tracker.reset()
+            return []
+        # Кисть «ребром» (плоская линия) — это не измерение позы пальцев, а шум.
+        # Такую руку не отдаём детектором: трекер продолжит её движение по
+        # предыдущим кадрам, и на экране не будет дёргающейся ладони-полоски.
+        measured = []
+        edge_on = 0
+        for hand in hands:
+            if is_edge_on(hand):
+                edge_on += 1
+                continue
+            measured.append(hand)
+        tracked = self.hand_tracker.update(measured, now, body=body)
+        if edge_on and not self.hand_tracker.count:
+            self._hand_notes.append("кисть ребром: поза не измеряется")
+        result = []            # для жестов: только измеренные руки
+        draw = []              # для окна: с предсказаниями и поправками физики
+        alive = set()
+        for item in tracked:
+            key = int(getattr(item, "track_id", 0))
+            alive.add(key)
+            physics = self._physics.get(key)
+            if physics is None:
+                physics = HandPhysics(bool(getattr(self.cfg.hand, "physics", True)))
+                self._physics[key] = physics
+            hand = item.hand
+            if bool(getattr(self.cfg.hand, "physics", True)):
+                out = physics.update(hand, now)
+                draw.append(out.hand)
+                if item.predicted:
+                    # предсказанную кисть тоже проверяем: физика не даст ей
+                    # выгнуться, пока она «едет» по инерции
+                    pass
+                if out.suspect:
+                    self._hand_notes.append(out.note())
+            else:
+                draw.append(hand)
+            self._predicted_hands.append(bool(item.predicted))
+            if item.predicted:
+                self._hand_notes.append(item.note)
+            else:
+                result.append(hand)
+        self._hands_draw = draw
+        # состояние физики для забытых треков больше не нужно
+        for key in [k for k in self._physics if k not in alive]:
+            del self._physics[key]
+        return result
+
     def _handle_body(self, points, now: float) -> List[Event]:
         """Тело целиком: считаем позу (и упражнения), если режим включён."""
         if not getattr(self.cfg.body, "enabled", False):
@@ -367,6 +450,8 @@ class AirMouseApp:
                 self._fit_window_to_screen()
             return
         self._fullscreen_applied = want
+        self._preview_cache = None
+        self._preview_at = 0.0
         # Каждое новое включение полного экрана — с чистым листом: раньше счётчик
         # попыток «растянуть окно» выбирался один раз за запуск, и после первой
         # же калибровки окно больше не разворачивалось — помогала только
@@ -393,6 +478,57 @@ class AirMouseApp:
                     cv2.moveWindow(self._window_name, 0, 0)
                 except Exception:
                     pass
+
+    def window_target_size(self) -> Tuple[int, int]:
+        """Какого размера должно быть окно: доля экрана при сохранении пропорций.
+
+        Пользователь просил «нормально масштабировать экран приложения, а не
+        только на калибровке»: картинка с веб-камеры 960×540 на мониторе
+        выглядит маленьким окошком. Здесь считаем стартовый размер от экрана
+        (``window_scale``, по умолчанию 85%), сохраняя пропорции кадра, и не
+        выходим за сам экран.
+        """
+        sw, sh = self.screen_size()
+        scale = float(getattr(self.cfg, "window_scale", 0.85) or 0.85)
+        scale = max(0.3, min(1.0, scale))
+        fw, fh = self._frame_size
+        aspect = fw / float(fh) if fw and fh else 16.0 / 9.0
+        w = int(sw * scale)
+        h = int(round(w / aspect))
+        if h > sh * scale:                       # высокий кадр — ограничиваем по высоте
+            h = int(sh * scale)
+            w = int(round(h * aspect))
+        return max(w, 320), max(h, 240)
+
+    def _preview_size(self) -> Optional[Tuple[int, int]]:
+        """Размер холста для показа — ровно как окно (кешируем 4 раза в секунду)."""
+        if not self.show_window:
+            return None
+        now = time.monotonic()
+        if now - self._preview_at < 0.25:
+            return self._preview_cache
+        self._preview_at = now
+        rect = self.window_rect()
+        if rect is None:
+            self._preview_cache = None
+            return None
+        _x, _y, w, h = rect
+        self._preview_cache = (w, h) if (w >= 320 and h >= 240) else None
+        return self._preview_cache
+
+    def _preview_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Растянуть кадр до окна: оверлей тогда рисуется в настоящих пикселях.
+
+        Иначе окно всего лишь растягивает уже готовую картинку 960×540, и текст
+        с panels «мылится». Здесь кадр увеличивается до размера окна, и весь
+        интерфейс рисуется в этом же размере — крупно и резко.
+        """
+        size = self._preview_size()
+        if size is None:
+            return frame
+        if (frame.shape[1], frame.shape[0]) == size:
+            return frame
+        return cv2.resize(frame, size, interpolation=cv2.INTER_LINEAR)
 
     def window_rect(self) -> Optional[Tuple[int, int, int, int]]:
         """Где на экране реально лежит картинка окна: (x, y, ширина, высота)."""
@@ -515,12 +651,16 @@ class AirMouseApp:
             events = self._translate(events, now)
         else:
             res = self.tracker.process(frame, ts_ms)
-            self._body_points = (getattr(res, "body", None)
-                                 if bool(getattr(self.cfg.body, "enabled", False)) else None)
+            raw_body = (getattr(res, "body", None)
+                        if bool(getattr(self.cfg.body, "enabled", False)) else None)
+            # Тело сглаживаем и показываем только когда оно реально видно:
+            # иначе скелет мигал по нескольку раз в секунду (в кадре только рука).
+            self._body_points = self.body_smoother.update(raw_body, now)
             self._reconcile_body()
             hands = self.hand_gate.update(res.hands)
             if self.cfg.hand.second_hand == "ignore" and len(hands) > 1:
                 hands = hands[:1]
+            hands = self._track_hands(hands, now, getattr(res, "body", None))
             self._hands = hands
             self._face = res.face
             self._shape = None
@@ -1504,6 +1644,10 @@ class AirMouseApp:
         s.head_pointer = self.router.head_pointer
         s.gaze_pointer = self.router.gaze_pointer
         s.gaze_text = self.gaze_text() if self._metrics is not None else ""
+        # одна короткая строка про кисть: предсказание или «физика» пальцев
+        notes = list(dict.fromkeys(n for n in self._hand_notes if n))
+        s.hand_note = " · ".join(notes[:2])
+        s.hand_predicted = bool(self._predicted_hands and any(self._predicted_hands))
         s.body_enabled = bool(getattr(self.cfg.body, "enabled", False))
         metrics_body = self.body_fsm.metrics
         s.body_where = metrics_body.where if metrics_body.visible else ""
@@ -1619,12 +1763,16 @@ class AirMouseApp:
                         # должен стоять в настоящем углу экрана
                         canvas = self.calibration_canvas()
                     else:
+                        # кадр растягиваем до окна и рисуем поверх него же —
+                        # интерфейс получается крупным и резким, а не «мыльным»
                         canvas = render(
-                            frame, self.state, self._hands, self._face,
+                            self._preview_frame(frame), self.state,
+                            self._hands_draw or self._hands, self._face,
                             shape=self._shape, metrics=self._metrics,
                             primary=self._primary_index,
                             body=self._body_points if self.cfg.body.show_skeleton else None,
                             body_min_visibility=float(self.cfg.body.min_visibility),
+                            predicted=self._predicted_hands,
                         )
                 else:
                     canvas = None
@@ -1640,6 +1788,15 @@ class AirMouseApp:
                 if self.show_window and canvas is not None:
                     try:
                         cv2.imshow(self._window_name, canvas)
+                        if not self._window_sized and not self._fullscreen:
+                            # первый показ: сразу нормальный размер, а не 960×540
+                            try:
+                                w, h = self.window_target_size()
+                                cv2.resizeWindow(self._window_name, w, h)
+                                log.info("Окно предпросмотра: %dx%d", w, h)
+                            except Exception as exc:
+                                log.debug("Окно не удалось растянуть при старте: %s", exc)
+                            self._window_sized = True
                         self._apply_window_mode()
                         # без & 0xFF: на русской раскладке нужен полный код
                         key = cv2.waitKey(1)

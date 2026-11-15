@@ -474,3 +474,102 @@ def synthetic_body(
         put(thumb_idx, wr_x - side * 0.010 * height, wr_y + 0.006 * height)
 
     return pts
+
+
+# --------------------------------------------------------------------------- #
+#  Стабильность: тело не должно мигать, когда его почти не видно
+# --------------------------------------------------------------------------- #
+class BodySmoother:
+    """Сглаживает точки позы по времени и гасит «скачущий» скелет.
+
+    Модель позы отдаёт 33 точки по одному кадру, и когда человека почти не видно
+    (в кадре только рука, половина корпуса за краем, кто-то прошёл фоном),
+    скелет появляется и исчезает по нескольку раз в секунду. Глазами это
+    читается как «моделька скачет», хотя человек стоит ровно.
+
+    Правила простые и проверяемые:
+
+    * скелет показываем только после ``confirm_frames`` кадров подряд с видимым
+      ядром (плечи + хотя бы один таз) — случайный кадр его не включает;
+    * точки сглаживаются 1€-фильтром: в покое не дрожат, при движении не
+      отстают;
+    * пропал на 1–2 кадра — держим последнюю позу (не мигаем), пропал надолго —
+      честно убираем.
+    """
+
+    def __init__(self, min_visibility: float = 0.5, confirm_frames: int = 3,
+                 hold_frames: int = 6, min_cutoff: float = 1.2, beta: float = 0.05) -> None:
+        self.min_visibility = float(min_visibility)
+        self.confirm_frames = max(int(confirm_frames), 1)
+        self.hold_frames = max(int(hold_frames), 0)
+        self._filter = OneEuroFilter(min_cutoff=min_cutoff, beta=beta)
+        self._seen = 0
+        self._missing = 0
+        self.active = False
+        self._last: Optional[np.ndarray] = None
+        self.metrics = BodyMetrics()
+        self.held = 0                  # сколько кадров держим прошлую позу
+
+    def reset(self) -> None:
+        self._filter.reset()
+        self._seen = 0
+        self._missing = 0
+        self.active = False
+        self._last = None
+        self.metrics = BodyMetrics()
+        self.held = 0
+
+    def update(self, body: Optional[np.ndarray], now: float) -> Optional[np.ndarray]:
+        ok = False
+        if body is not None:
+            metrics = measure_body(body, self.min_visibility)
+            ok = bool(metrics.torso_ok)
+            if ok:
+                self.metrics = metrics
+        if ok:
+            self._seen += 1
+            self._missing = 0
+            self.held = 0
+            smoothed = np.array(body, dtype=np.float64, copy=True)
+            smoothed[:, :2] = self._filter.filter(smoothed[:, :2], now)
+            self._last = smoothed
+            if self._seen >= self.confirm_frames:
+                self.active = True
+            return smoothed if self.active else None
+
+        self._seen = 0
+        self._missing += 1
+        if not self.active:
+            return None
+        if self._missing <= self.hold_frames and self._last is not None:
+            # короткий провал: держим позу, но не двигаем её — и не считаем, что
+            # человек что-то делает (упражнения в это время не считаются)
+            self.held = self._missing
+            self.metrics.visible = False
+            return self._last
+        self.active = False
+        self._last = None
+        self.metrics = BodyMetrics()
+        return None
+
+
+def arm_points(body: Optional[np.ndarray], min_visibility: float = 0.5):
+    """Видимые звенья рук: [(плечо, локоть, запястье, сколько видно), ...].
+
+    Нужны, когда кисть потерялась: по телу видно, где рука **должна** быть, и
+    можно дорисовать предплечье, а не показывать пустое место.
+    """
+    if body is None or len(body) < 17:
+        return []
+    result = []
+    for shoulder, elbow, wrist in ((B.L_SHOULDER, B.L_ELBOW, B.L_WRIST),
+                                   (B.R_SHOULDER, B.R_ELBOW, B.R_WRIST)):
+        vis = [float(body[i, 3]) if body.shape[1] > 3 else 1.0
+               for i in (shoulder, elbow, wrist)]
+        if vis[0] < min_visibility or vis[1] < min_visibility:
+            continue
+        result.append((np.asarray(body[shoulder, :2], dtype=float),
+                       np.asarray(body[elbow, :2], dtype=float),
+                       np.asarray(body[wrist, :2], dtype=float) if vis[2] >= min_visibility else None,
+                       min(vis)))
+    return result

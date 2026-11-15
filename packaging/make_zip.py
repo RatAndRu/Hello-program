@@ -37,6 +37,8 @@ INCLUDE_FILES = [
     "docs/overlay-body.png",
     "docs/overlay-body-waist.png",
     "docs/overlay-settings-body.png",
+    "docs/overlay-settings-window.png",
+    "docs/overlay-hand-predicted.png",
 ]
 INCLUDE_DIRS = ["airmouse", "tests"]
 SKIP_SUFFIXES = {".pyc", ".pyo", ".task", ".part", ".avi", ".mp4", ".gif", ".npz"}

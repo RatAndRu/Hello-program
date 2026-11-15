@@ -345,6 +345,28 @@ def build_sliders() -> List[Slider]:
         hint="меньше — резче по вертикали",
     ))
 
+    # ---------------- окно и трекер кисти ----------------
+    items.append(Slider(
+        key="window_scale",
+        label="окно при старте: доля экрана",
+        group="Окно и рука",
+        lo=0.4, hi=1.0, step=0.05,
+        get=lambda cfg: cfg.window_scale,
+        set=lambda cfg, v: setattr(cfg, "window_scale", float(v)),
+        fmt="{:.2f}",
+        hint="1.00 — во весь экран, 0.85 — почти весь; F — полный экран на ходу",
+    ))
+    items.append(Slider(
+        key="hand.predict_frames",
+        label="кисть: дорисовывать, кадров",
+        group="Окно и рука",
+        lo=0.0, hi=15.0, step=1.0,
+        get=lambda cfg: float(cfg.hand.predict_frames),
+        set=lambda cfg, v: setattr(cfg.hand, "predict_frames", int(round(float(v)))),
+        fmt="{:.0f}",
+        hint="сколько кадров вести руку по инерции, когда её не видно (6 ≈ 0.2 с)",
+    ))
+
     # ---------------- надёжность руки ----------------
     items.append(Slider(
         key="hand.min_score",
@@ -488,9 +510,10 @@ def changed_values(cfg: AppConfig, sliders: Sequence[Slider] = SLIDERS) -> List[
 # на русском (встроенные ползунки HighGUI на Windows показывают кириллицу
 # «кракозябрами»), а вид совпадает с остальным окном.
 PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и руки",
-              "Моргание и глаза", "Тело")
+              "Моргание и глаза", "Тело", "Окно и рука")
 PAGE_EYES = 4
 PAGE_BODY = 5
+PAGE_WINDOW = 6
 
 _BG = (26, 26, 30)
 _PANEL = (34, 34, 39)
@@ -614,6 +637,24 @@ def build_toggles() -> List[Toggle]:
     ]
 
 
+HAND_TOGGLES: List[Toggle] = [
+    Toggle(
+        key="hand.physics",
+        label="Физика пальцев",
+        hint="пределы сгиба и связка соседних пальцев",
+        get=lambda cfg, rt: bool(getattr(cfg.hand, "physics", True)),
+        set=lambda cfg, rt, on: setattr(cfg.hand, "physics", bool(on)),
+    ),
+    Toggle(
+        key="hand.predict_use_body",
+        label="Кисть по телу",
+        hint="предсказанную кисть подтягивать к запястью из тела",
+        get=lambda cfg, rt: bool(getattr(cfg.hand, "predict_use_body", True)),
+        set=lambda cfg, rt, on: setattr(cfg.hand, "predict_use_body", bool(on)),
+    ),
+]
+
+
 def _set_head_pointer(cfg: AppConfig, runtime: Any, on: bool) -> None:
     cfg.head_pointer = bool(on)
     if runtime is not None and hasattr(runtime, "head_pointer"):
@@ -649,8 +690,10 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
     pinch = pick(("Щипок",))
     eyes = pick(("Моргание",))
     body = pick(("Тело",))
+    window = pick(("Окно",))
     rest = [s for name, items in groups_all
-            if not any(name.startswith(p) for p in ("Курсор", "Щипок", "Моргание", "Тело"))
+            if not any(name.startswith(p) for p in ("Курсор", "Щипок", "Моргание", "Тело",
+                                                    "Окно"))
             for s in items]
     return [
         Page(PAGE_ORDER[0], [], list(toggles), presets=True),
@@ -659,6 +702,7 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
         Page(PAGE_ORDER[3], rest),
         Page(PAGE_ORDER[4], eyes),
         Page(PAGE_ORDER[5], body),
+        Page(PAGE_ORDER[6], window, list(HAND_TOGGLES), presets=False),
     ]
 
 
@@ -836,7 +880,9 @@ class SettingsPanel:
         gap = int(16 * k)
         total = int(w - 2 * self.MARGIN * k)
         width = int((total - gap * (columns - 1)) / columns) if columns > 1 else total
-        row_h = int((self.ROW_H + 6) * k) if columns > 1 else int(self.ROW_H * k)
+        # высота строки одна и та же в любой раскладке: под названием идёт
+        # подсказка, и в одну колонку она налезала на следующий переключатель
+        row_h = int((self.ROW_H + 8) * k)
         out = []
         for i, toggle in enumerate(page.toggles):
             row, col = divmod(i, columns)
@@ -917,6 +963,10 @@ class SettingsPanel:
         k = max(min(h / 540.0, w / 960.0), 0.5)
         rows: List[Row] = []
         y = int(self.FIRST_Y * k)
+        # если на странице есть переключатели, ползунки начинаются под ними
+        toggle_rows = self.toggle_rows(size)
+        if toggle_rows:
+            y = max(rect[1] + rect[3] for _t, rect in toggle_rows) + int(10 * k)
         x = int(self.MARGIN * k)
         row_h = int(self.ROW_H * k)
         track_w = int(w - 2 * self.MARGIN * k)

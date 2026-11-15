@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+
+import numpy as np
 from typing import Dict, Optional
 
 
@@ -56,7 +58,13 @@ class OneEuroFilter:
         self._dx = a_d * raw_dx + (1.0 - a_d) * self._dx
         speed = abs(self._dx)
         if hasattr(speed, "__len__"):
-            speed = float(sum(abs(v) for v in speed) / len(speed))
+            # многомерный случай (облако точек тела): берём среднюю скорость.
+            # Раньше здесь падало на массиве из строк — суммировать строки
+            # numpy нельзя, а именно так приходит (33, 2) точек позы.
+            try:
+                speed = float(np.mean(np.abs(np.asarray(speed, dtype=float))))
+            except Exception:
+                speed = 0.0
         cutoff = self.min_cutoff + self.beta * float(speed)
         a = alpha_from_cutoff(cutoff, dt)
         self._x = a * value + (1.0 - a) * self._x

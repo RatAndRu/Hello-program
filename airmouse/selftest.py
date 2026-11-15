@@ -959,6 +959,76 @@ def check_gaze_direction() -> Check:
     return Check("взгляд: направления по калибровке", ok, " ".join(words))
 
 
+def check_hand_tracker() -> Check:
+    """Трекер кисти: рука продолжает движение по инерции и потом исчезает."""
+    from .handtrack import HandTracker
+    from .landmarks import FINGERS
+
+    tracker = HandTracker(predict_frames=4)
+    curl = {name: 0.0 for name in FINGERS}
+    tracker.update([synthetic_hand(center=(0.40, 0.60), curl=curl)], 0.0)
+    tracker.update([synthetic_hand(center=(0.45, 0.60), curl=curl)], 1 / 30)
+    predicted = tracker.update([], 2 / 30)
+    kept = bool(predicted) and predicted[0].predicted
+    moved = kept and float(predicted[0].hand.palm_center[0]) > 0.45
+    for i in range(3, 12):
+        tracker.update([], i / 30)
+    forgotten = tracker.count == 0
+    ok = bool(kept and moved and forgotten)
+    return Check("трекер кисти: ведёт по инерции", ok,
+                 f"предсказана={kept}, сдвинулась={moved}, забыта={forgotten}")
+
+
+def check_hand_physics() -> Check:
+    """Физика пальцев: живая рука не трогается, невозможная — исправляется."""
+    from .handphysics import HandPhysics, FingerPose, coupling_error, rebuild_finger, poses
+    from .landmarks import FINGERS
+
+    natural = synthetic_hand(curl={name: 0.5 for name in FINGERS})
+    clean = HandPhysics().update(natural, 0.0)
+    broken = synthetic_hand(curl={name: 0.0 for name in FINGERS})
+    rebuild_finger(broken, "index", FingerPose(mcp=6.0, pip=4.0, dip=58.0), sign=1.0)
+    fixed = HandPhysics().update(broken, 0.0)
+    ok = (not clean.suspect and not clean.rebuilt
+          and "index" in fixed.suspect and fixed.rebuilt == 1
+          and coupling_error(fixed.poses["index"]) < 20.0)
+    return Check("физика пальцев: невозможная поза", ok,
+                 f"живая рука: правок={clean.rebuilt}, "
+                 f"невозможная: помечена={'index' in fixed.suspect}, "
+                 f"DIP после правки={fixed.poses['index'].dip:.0f}°")
+
+
+def check_body_stability() -> Check:
+    """Тело не мигает: показывается не сразу и держится на пропущенном кадре."""
+    from .body import BodySmoother, synthetic_body
+
+    smoother = BodySmoother(confirm_frames=2, hold_frames=4)
+    first = smoother.update(synthetic_body(center=(0.5, 0.5), height=0.8), 0.0)
+    second = smoother.update(synthetic_body(center=(0.5, 0.5), height=0.8), 0.1)
+    held = smoother.update(None, 0.2)
+    ok = first is None and second is not None and held is not None
+    return Check("тело: скелет не мигает", ok,
+                 f"первый кадр={first is None}, со второго видно={second is not None}, "
+                 f"пропуск держится={held is not None}")
+
+
+def check_window_scale() -> Check:
+    """Окно предпросмотра: доля экрана и пропорции кадра."""
+    from .app import AirMouseApp
+    from .config import AppConfig
+
+    cfg = AppConfig()
+    cfg.window_scale = 0.85
+    app = AirMouseApp(cfg, dry_run=True, show_window=True)
+    app._prepared = True
+    app._frame_size = (960, 540)
+    app.screen_size = lambda: (1920, 1080)
+    w, h = app.window_target_size()
+    ok = abs(w - int(1920 * 0.85)) <= 2 and abs(h - w * 540 / 960) <= 2
+    return Check("окно: картинка на весь экран, а не окошко", ok,
+                 f"экран 1920x1080 -> окно {w}x{h}")
+
+
 CHECKS: List[Callable[[], Check]] = [
     check_filters,
     check_hysteresis,
@@ -982,6 +1052,10 @@ CHECKS: List[Callable[[], Check]] = [
     check_gaze_dwell,
     check_gaze_accuracy,
     check_gaze_direction,
+    check_hand_tracker,
+    check_hand_physics,
+    check_body_stability,
+    check_window_scale,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

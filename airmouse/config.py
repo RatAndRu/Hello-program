@@ -150,6 +150,11 @@ class HandConfig:
     fist_scroll_gain: float = 22.0     # «тиков» прокрутки на единицу смещения
     fist_scroll_deadzone: float = 0.006
     pointer_source: str = "auto"       # auto | index_tip | palm
+    # Трекер кисти: держим руку, когда нейросеть её потеряла (ребром, за другой
+    # рукой, на пару кадров). См. airmouse/handtrack.py.
+    predict_frames: int = 6            # сколько кадров дорисовывать кисть (6 ≈ 0.2 с)
+    predict_use_body: bool = True      # подтягивать предсказанную кисть к запястью из тела
+    physics: bool = True               # пределы сгиба пальцев и связка соседних
     two_hand: str = "off"             # off | zoom | scroll — режим «две руки» (включается кнопкой)
     two_hand_deadzone: float = 0.004   # мёртвая зона изменения расстояния между руками
     two_hand_zoom_gain: float = 30.0   # «тиков» масштаба на единицу расстояния
@@ -301,6 +306,7 @@ class AppConfig:
     show_window: bool = True
     show_skeleton: bool = True
     fullscreen: bool = False           # окно предпросмотра на весь экран (клавиша F)
+    window_scale: float = 0.85         # размер окна при старте: доля экрана (0.3..1)
     tracker: str = "auto"              # auto | mediapipe | classical | none
     model_dir: str = "models"
     profile_dir: str = "profiles"
