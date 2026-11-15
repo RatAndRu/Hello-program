@@ -156,7 +156,8 @@ class HandConfig:
     # рукой, на пару кадров). См. airmouse/handtrack.py.
     predict_frames: int = 6            # сколько кадров дорисовывать кисть (6 ≈ 0.2 с)
     predict_use_body: bool = True      # подтягивать предсказанную кисть к запястью из тела
-    physics: bool = True               # пределы сгиба пальцев и связка соседних
+    physics: bool = True               # диагностика анатомии пальцев (только подпись в окне)
+    smooth: bool = True                # сглаживание кисти: ладонь жёстко, пальцы в её системе
     two_hand: str = "off"             # off | zoom | scroll — режим «две руки» (включается кнопкой)
     two_hand_deadzone: float = 0.004   # мёртвая зона изменения расстояния между руками
     two_hand_zoom_gain: float = 30.0   # «тиков» масштаба на единицу расстояния

@@ -248,7 +248,8 @@ class HandPhysics:
     оверлее можно сравнить «до» и «после».
     """
 
-    def __init__(self, enabled: bool = True, rebuild: bool = False) -> None:
+    def __init__(self, enabled: bool = True, rebuild: bool = False,
+                 hold: bool = True) -> None:
         """``rebuild`` — перерисовывать ли палец по «исправленным» углам.
 
         По умолчанию выключено. Углы здесь считаются по **плоской** картинке,
@@ -263,6 +264,7 @@ class HandPhysics:
         """
         self.enabled = bool(enabled)
         self.rebuild = bool(rebuild)
+        self.hold = bool(hold)        # придерживать ли палец при одиночном скачке
         self._prev_poses: Dict[str, FingerPose] = {}
         self._prev_points: Optional[np.ndarray] = None
         self._prev_t: Optional[float] = None
@@ -319,7 +321,7 @@ class HandPhysics:
                 alone = bool(others) and max(others) < NEIGHBOUR_JUMP * 10.0
 
             streak = self._hold_streak.get(name, 0)
-            if (prev is not None and (jump > frame_limit or alone)
+            if (self.hold and prev is not None and (jump > frame_limit or alone)
                     and streak < MAX_HOLD_FRAMES):
                 # Глитч: придерживаем палец на прошлом кадре, но двигаем его
                 # вместе с кистью (иначе палец «отклеится» от ладони).

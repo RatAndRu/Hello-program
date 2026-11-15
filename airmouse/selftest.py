@@ -1002,6 +1002,29 @@ def check_hand_physics() -> Check:
                  f"точки не тронуты={bool(np.allclose(flagged.hand.points, broken.points))}")
 
 
+def check_hand_smooth() -> Check:
+    """Сглаживание кисти: дрожание гаснет, форма цела, предсказание жёсткое."""
+    from .handsmooth import HandSmoother, to_local
+    from .landmarks import INDEX_TIP, WRIST
+
+    rng = np.random.default_rng(2)
+    sm = HandSmoother()
+    base = synthetic_hand(center=(0.5, 0.55))
+    outs = []
+    for i in range(40):
+        noisy = base.points.astype(np.float64).copy()
+        noisy[:, :2] += rng.normal(0, 0.004, size=(21, 2))
+        outs.append(sm.update(type(base)(noisy.astype(np.float32)), i / 30).points)
+    jitter = float(np.asarray(outs[20:])[:, INDEX_TIP, :2].std(axis=0).mean())
+    last = outs[-1]
+    pred = sm.predict(41 / 30)
+    rigid = pred is not None and np.allclose(
+        to_local(pred.points)[:, :2], to_local(last)[:, :2], atol=1e-4)
+    ok = jitter < 0.002 and rigid
+    return Check("сглаживание кисти: ровно, цельно, без каши", ok,
+                 f"дрожание {jitter * 1000:.2f}‰ кадра (сырое 4‰), предсказание жёсткое={rigid}")
+
+
 def check_body_stability() -> Check:
     """Тело не мигает: показывается не сразу и держится на пропущенном кадре."""
     from .body import BodySmoother, synthetic_body
@@ -1152,6 +1175,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_gaze_direction,
     check_hand_tracker,
     check_hand_physics,
+    check_hand_smooth,
     check_body_stability,
     check_window_scale,
     check_face_body_anchors,

@@ -44,6 +44,8 @@ from .landmarks import Hand, MIDDLE_MCP, WRIST
 MAX_SPEED_PALM = 8.0
 # Насколько точка может сместиться между кадрами относительно ладони.
 MAX_POINT_SPEED = 10.0
+# Скорость предсказания гаснет на столько за каждый пропущенный кадр.
+PREDICT_DAMPING = 0.75
 
 
 # «Ребром»: рука повёрнута к камере так, что кисть схлопывается в линию
@@ -245,7 +247,12 @@ class HandTracker:
             # подпись). Второй, выдуманной, ладони на экране быть не должно.
             if self._near_measured(track, used):
                 continue
-            step = np.clip(track.velocity * dt, -MAX_POINT_SPEED, MAX_POINT_SPEED)
+            # Жёсткий сдвиг: вся кисть едет со скоростью ладони, и эта
+            # скорость гаснет с каждым кадром. Раньше каждая из 21 точки
+            # летела своей скоростью — пальцы разъезжались в кашу.
+            palm_ids = (WRIST, 5, 9, 13, 17)
+            palm_v = track.velocity[list(palm_ids)].mean(axis=0) * (PREDICT_DAMPING ** track.missed)
+            step = np.clip(palm_v * dt, -MAX_POINT_SPEED, MAX_POINT_SPEED)
             track.points[:, :2] = track.points[:, :2] + step
             np.clip(track.points[:, :2], 0.0, 1.0, out=track.points[:, :2])
             if self.use_body and body is not None:

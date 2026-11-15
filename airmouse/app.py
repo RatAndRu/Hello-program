@@ -20,6 +20,7 @@ from . import keys
 from .config import AppConfig, resolve_path, save_config
 from .face import FaceFSM, FaceMetrics, measure_face
 from .handphysics import HandPhysics
+from .handsmooth import HandSmoother
 from .handtrack import HandTracker, is_edge_on
 from .profile import MotionProfile, MotionWizard
 from .gaze import (
@@ -53,7 +54,7 @@ from .gestures import (
 )
 from .lipreading import LipReader, TemplateStore, mouth_features
 from .overlay import OverlayState, render, render_gaze_calibration
-from .landmarks import WRIST
+from .landmarks import Hand, WRIST
 from .pointer import PointerMapper
 from .settings_ui import SettingsPanel, cycle_preset, modes_summary
 from .tracker import FrameResult, create_tracker
@@ -154,6 +155,7 @@ class AirMouseApp:
             use_body=bool(getattr(cfg.hand, "predict_use_body", True)),
         )
         self._physics: Dict[int, HandPhysics] = {}
+        self._smoothers: Dict[int, HandSmoother] = {}
         self._predicted_hands: List[bool] = []
         self._hands_draw: List = []         # кисти для окна (с предсказаниями)
         self._hand_notes: List[str] = []
@@ -355,37 +357,57 @@ class AirMouseApp:
         tracked = self.hand_tracker.update(measured, now, body=body)
         if any(getattr(h, "edge_on", False) for h in measured):
             self._hand_notes.append("кисть ребром: только курсор, без жестов")
-        result = []            # для жестов: только измеренные руки
-        draw = []              # для окна: с предсказаниями и поправками физики
+        result = []            # для жестов: измеренные руки, сырые точки
+        draw = []              # для окна: сглаженные руки + жёсткие предсказания
         alive = set()
+        smoothing = bool(getattr(self.cfg.hand, "smooth", True))
         for item in tracked:
             key = int(getattr(item, "track_id", 0))
             alive.add(key)
-            physics = self._physics.get(key)
-            if physics is None:
-                physics = HandPhysics(bool(getattr(self.cfg.hand, "physics", True)))
-                self._physics[key] = physics
+            smoother = self._smoothers.get(key)
+            if smoother is None:
+                smoother = HandSmoother()
+                self._smoothers[key] = smoother
             hand = item.hand
-            if bool(getattr(self.cfg.hand, "physics", True)):
-                out = physics.update(hand, now)
-                draw.append(out.hand)
-                if item.predicted:
-                    # предсказанную кисть тоже проверяем: физика не даст ей
-                    # выгнуться, пока она «едет» по инерции
-                    pass
-                if out.suspect:
-                    self._hand_notes.append(out.note())
-            else:
-                draw.append(hand)
-            self._predicted_hands.append(bool(item.predicted))
             if item.predicted:
+                # Потерянный кадр: кисть едет дальше как жёсткое тело, форма
+                # пальцев заморожена. Запястье подтягиваем к тому, что
+                # насчитал трекер (он знает про запястье из тела).
+                out = smoother.predict(now) if smoothing else None
+                if out is None:
+                    out = hand
+                else:
+                    shift = (np.asarray(hand.points[WRIST, :2], dtype=np.float64)
+                             - np.asarray(out.points[WRIST, :2], dtype=np.float64))
+                    if float(np.linalg.norm(shift)) < 0.25:
+                        pts = out.points.astype(np.float64)
+                        pts[:, :2] += 0.5 * shift
+                        out = Hand(pts.astype(np.float32), out.handedness, out.score)
+                draw.append(out)
                 self._hand_notes.append(item.note)
             else:
+                # Жесты считаются по сырым точкам (клик не должен ждать
+                # фильтр), а в окно идёт сглаженная кисть: ровная и цельная.
+                out = smoother.update(hand, now) if smoothing else hand
+                draw.append(out)
                 result.append(hand)
+                # Физика пальцев — только диагностика: отмечает палец,
+                # согнутый анатомически невозможно, но точки не трогает.
+                if bool(getattr(self.cfg.hand, "physics", True)):
+                    physics = self._physics.get(key)
+                    if physics is None:
+                        physics = HandPhysics(True, rebuild=False, hold=False)
+                        self._physics[key] = physics
+                    note = physics.update(out, now)
+                    if note.suspect:
+                        self._hand_notes.append(note.note())
+            self._predicted_hands.append(bool(item.predicted))
         self._hands_draw = draw
-        # состояние физики для забытых треков больше не нужно
+        # состояние для забытых треков больше не нужно
         for key in [k for k in self._physics if k not in alive]:
             del self._physics[key]
+        for key in [k for k in self._smoothers if k not in alive]:
+            del self._smoothers[key]
         return result
 
     def _face_center(self, face) -> Optional[np.ndarray]:
