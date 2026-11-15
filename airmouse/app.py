@@ -22,6 +22,7 @@ from .gestures import (
     SIDE_TITLES_RU,
     Event,
     HandFSM,
+    HandGate,
     HandSide,
     POSE_TITLES_RU,
     TwoHandFSM,
@@ -103,6 +104,8 @@ class AirMouseApp:
         self.router = ActionRouter(self.backend, cfg)
         self.pointer = PointerMapper(cfg.pointer, self.backend.screen_size())
         self.hand_fsm = HandFSM(cfg.hand)
+        # фильтр «это точно рука?»: фантомные детекции не должны управлять
+        self.hand_gate = HandGate(cfg.hand)
         self.two_hand_fsm = TwoHandFSM(cfg.hand)
         self.face_fsm = FaceFSM(cfg.face)
         self.camera: Optional[ThreadedCamera] = None
@@ -232,7 +235,7 @@ class AirMouseApp:
             events = self._translate(events, now)
         else:
             res = self.tracker.process(frame, ts_ms)
-            hands = list(res.hands)
+            hands = self.hand_gate.update(res.hands)
             if self.cfg.hand.second_hand == "ignore" and len(hands) > 1:
                 hands = hands[:1]
             self._hands = hands

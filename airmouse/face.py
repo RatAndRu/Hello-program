@@ -293,8 +293,11 @@ class FaceFSM:
         self.head = HeadGestures(cfg)
         self.brow_cooldown = Cooldown(cfg.brow_cooldown_s)
         self._last_blink_t: Optional[float] = None
-        self._closed_since: Optional[float] = None
-        self._both_closed_seen = False
+        self._both_start: Optional[float] = None     # когда закрылись оба глаза
+        self._closed_too_long = False                # держим закрытыми слишком долго
+        self._closed_event_sent = False              # «глаза закрыты» уже сообщили
+        self._eye = {"left": {"start": None, "other_closed": False},
+                     "right": {"start": None, "other_closed": False}}
         self.smile_score = 0.0
         self.brow_score = 0.0
         self.sad_score = 0.0
@@ -321,13 +324,19 @@ class FaceFSM:
         self.head.reset()
         self.cooldown.reset()
         self._last_blink_t = None
-        self._closed_since = None
+        self._both_start = None
+        self._closed_too_long = False
+        self._closed_event_sent = False
+        self._eye = {"left": {"start": None, "other_closed": False},
+                     "right": {"start": None, "other_closed": False}}
 
     # ------------------------------------------------------------------ #
     def update(self, m: Optional[FaceMetrics], now: float) -> List[Event]:
         events: List[Event] = []
         if m is None or not m.valid:
-            self._closed_since = None
+            self._both_start = None
+            self._eye = {"left": {"start": None, "other_closed": False},
+                         "right": {"start": None, "other_closed": False}}
             return events
 
         self.ear_value = min(m.ear_left, m.ear_right)
@@ -368,48 +377,74 @@ class FaceFSM:
             self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
 
         # --- моргание и подмигивание ------------------------------------ #
-        dl = self.left.update(m.ear_left, now)
-        dr = self.right.update(m.ear_right, now)
-        both_open = not self.left.closed and not self.right.closed
-        both_closed = self.left.closed and self.right.closed
+        # Считаем «эпизоды» закрытия, а не отдельные кадры:
+        #  * оба глаза закрылись и открылись вместе — моргание (два подряд —
+        #    двойное моргание);
+        #  * закрылся ровно один глаз, а второй ЗА ВСЁ ВРЕМЯ ни разу не
+        #    закрылся — подмигивание. Если во время «подмигивания» второй глаз
+        #    тоже моргнул, это обычное моргание, а не подмигивание.
+        #  * держим глаза закрытыми дольше eyes_closed_cap_s — не считаем это
+        #    ни морганием, ни подмигиванием, пока глаза не откроются.
+        self.left.update(m.ear_left, now)
+        self.right.update(m.ear_right, now)
+        closed = {"left": self.left.closed, "right": self.right.closed}
+        both_open = not closed["left"] and not closed["right"]
+        both_closed = closed["left"] and closed["right"]
+        cap = self.cfg.eyes_closed_cap_s
 
         if both_closed:
-            if self._closed_since is None:
-                self._closed_since = now
-            self._both_closed_seen = True
+            if self._both_start is None:
+                self._both_start = now
+            if now - self._both_start >= cap:
+                if not self._closed_too_long:
+                    # держим закрытыми слишком долго: дальше не считаем ничего,
+                    # пока глаза не откроются (и не копим «моргание»)
+                    self._closed_too_long = True
+                    self._last_blink_t = None
+            # Оба закрыты долго — «зажмурился», это не моргание. Одно событие
+            # на эпизод, чтобы не сыпать им каждые полсекунды.
+            if (not self._closed_too_long and not self._closed_event_sent
+                    and now - self._both_start > self.cfg.blink_max_s):
+                self._closed_event_sent = True
+                events.append(Event("eyes_closed_hold", label="глаза закрыты"))
+        elif self._both_start is not None:
+            dur = now - self._both_start
+            self._both_start = None
+            too_long = self._closed_too_long
+            if both_open:
+                self._closed_too_long = False
+            if (not too_long and not self._closed_too_long
+                    and self.cfg.blink_min_s <= dur <= self.cfg.blink_max_s):
+                # моргание обоими глазами: одно событие на эпизод
+                if (self._last_blink_t is not None
+                        and (now - self._last_blink_t) <= self.cfg.double_blink_window_s):
+                    if self.cooldown.try_fire("double_blink", now):
+                        events.append(Event("double_blink", label="двойное моргание"))
+                    self._last_blink_t = None
+                else:
+                    self._last_blink_t = now
 
-        # Оба глаза закрыты долго — «зажмурился», это не моргание.
-        long_close = (
-            self._closed_since is not None
-            and (now - self._closed_since) > self.cfg.blink_max_s
-        )
-        if long_close and self.cooldown.try_fire("eyes_closed", now):
-            events.append(Event("eyes_closed_hold", label="глаза закрыты"))
+        for side, other in (("left", "right"), ("right", "left")):
+            state = self._eye[side]
+            if closed[side]:
+                if state["start"] is None:
+                    state["start"] = now
+                    state["other_closed"] = False
+                if closed[other]:
+                    # второй глаз тоже закрыт — подмигивания тут быть не может
+                    state["other_closed"] = True
+            elif state["start"] is not None:
+                dur = now - state["start"]
+                other_closed = state["other_closed"]
+                state["start"] = None
+                state["other_closed"] = False
+                if (not other_closed and not self._closed_too_long
+                        and self.cfg.wink_min_s <= dur <= cap):
+                    events.append(Event(f"wink_{side}", label=f"wink {side}"))
 
-        for side, dur, other_closed in (
-            ("left", dl, self.right.closed),
-            ("right", dr, self.left.closed),
-        ):
-            if dur is None or dur > 2.0:
-                continue
-            if self._both_closed_seen:
-                # моргание обоими глазами: короткое — кандидат в «двойное»
-                if self.cfg.blink_min_s <= dur <= self.cfg.blink_max_s:
-                    if self._last_blink_t is not None and (
-                        now - self._last_blink_t
-                    ) <= self.cfg.double_blink_window_s:
-                        if self.cooldown.try_fire("double_blink", now):
-                            events.append(Event("double_blink", label="двойное моргание"))
-                        self._last_blink_t = None
-                    else:
-                        self._last_blink_t = now
-            elif dur >= 0.20 and not other_closed:
-                # закрыт ровно один глаз — подмигивание
-                events.append(Event(f"wink_{side}", label=f"wink {side}"))
-
-        if both_open and not events:
-            self._closed_since = None
-            self._both_closed_seen = False
+        if both_open:
+            self._closed_too_long = False
+            self._closed_event_sent = False
 
         # --- улыбка ---------------------------------------------------- #
         smile_now = self.smile_score > self.cfg.smile_delta * 1.2

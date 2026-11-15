@@ -195,6 +195,46 @@ def check_gaze() -> Check:
                  f"вправо={dx:.1f}px за 0.1с, без радужки — {blind.gaze_valid}")
 
 
+def check_blink_rules() -> Check:
+    """Моргание: время захвата, подмигивание только одним глазом, предел 4 с."""
+    cfg = FaceConfig()
+    fps = 25.0
+    open_ear, closed_ear = 0.30, 0.08
+
+    def play(ears, fsm=None):
+        fsm = fsm or FaceFSM(cfg)
+        t, out = 0.0, []
+        for ear in ears:
+            pair = (ear, ear) if isinstance(ear, (int, float)) else ear
+            out += fsm.update(measure_face(synthetic_face(ear=pair)), t)
+            t += 1.0 / fps
+        return [e.kind for e in out]
+
+    instant = play([open_ear] * 6 + [closed_ear] + [open_ear] * 4)
+    both = play([open_ear] * 6 + [(closed_ear, closed_ear)] * 4 + [open_ear] * 4)
+    wink = play([open_ear] * 6 + [(closed_ear, open_ear)] * 8 + [open_ear] * 4)
+    long_closed = play([open_ear] * 6 + [closed_ear] * int(5 * fps) + [open_ear] * 6)
+    ok = (instant == [] and not any(k.startswith("wink") for k in both)
+          and wink == ["wink_left"] and long_closed.count("eyes_closed_hold") == 1)
+    return Check("моргание: захват, один глаз, предел", ok,
+                 f"мгновенное={instant}, оба={both}, подмигивание={wink}, 5с={long_closed}")
+
+
+def check_hand_gate() -> Check:
+    """Фантомные «руки» отсекаются: уверенность и размер ладони."""
+    from .gestures import HandGate, synthetic_hand
+
+    gate = HandGate(HandConfig())
+    weak = synthetic_hand(scale=0.2)
+    weak.score = 0.15
+    tiny = synthetic_hand(scale=0.004)
+    ok_hand = synthetic_hand(scale=0.2)
+    passed = bool(not gate.update([weak]) and not gate.update([tiny])
+                  and gate.update([ok_hand]))
+    return Check("ложные руки отсекаются", passed,
+                 f"слабая={weak.score:.2f}, крошечная={tiny.palm_size:.3f}")
+
+
 def check_settings_panel() -> Check:
     """Ползунки настроек реально меняют конфиг и сохраняются в файл."""
     cfg = AppConfig()
@@ -603,6 +643,8 @@ CHECKS: List[Callable[[], Check]] = [
     check_keys_any_layout,
     check_sad_not_smile,
     check_gaze,
+    check_blink_rules,
+    check_hand_gate,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

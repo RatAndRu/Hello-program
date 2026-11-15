@@ -85,7 +85,7 @@ HELP_FACE = (
     ("кивок", "головой вверх-вниз", "настраивается"),
     ("поворот", "головой влево-вправо", "настраивается"),
     ("моргание", "двойное моргание", "левый клик"),
-    ("подмигивание", "один глаз", "правый клик"),
+    ("подмигивание", "один глаз, ≥0.25 с", "правый клик"),
 )
 
 HELP_KEYS = (
@@ -466,9 +466,14 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     yy = header("Мимика и голова:", right_x, yy)
     yy = rows(HELP_FACE, right_x, yy, name_w=12)
     yy += int(4 * k)
-    T.draw(img, "жесты мимики только показываются в окне,", (right_x, yy), int(12 * k), DIM)
+    T.draw(img, "моргание — оба глаза; подмигивание — ровно один.",
+           (right_x, yy), int(12 * k), DIM)
     yy += int(16 * k)
-    T.draw(img, "действия включаются в config/airmouse.json", (right_x, yy), int(12 * k), DIM)
+    T.draw(img, "Закрыты дольше 4 с — не считается, пока не откроете.",
+           (right_x, yy), int(12 * k), DIM)
+    yy += int(16 * k)
+    T.draw(img, "Действия мимики включаются в config/airmouse.json",
+           (right_x, yy), int(12 * k), DIM)
     yy += int(30 * k)
     yy = header("Сторона кисти (клавиша K — калибровка):", right_x, yy)
     T.draw(img, "ладонью: двойной клик / пауза / мышь головой", (right_x, yy), int(12 * k), FG)

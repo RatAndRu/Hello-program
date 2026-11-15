@@ -263,6 +263,70 @@ def build_sliders() -> List[Slider]:
         hint="в этой зоне курсор стоит — убирает дрожание головы",
     ))
 
+    # ---------------- моргание и глаза ----------------
+    items.append(Slider(
+        key="face.blink_min_s",
+        label="моргание: время захвата, с",
+        group="Моргание и глаза",
+        lo=0.04, hi=0.30, step=0.01,
+        get=lambda cfg: cfg.face.blink_min_s,
+        set=lambda cfg, v: setattr(cfg.face, "blink_min_s", float(v)),
+        fmt="{:.2f}",
+        hint="короче этого — не моргание, а случайное прищуривание",
+    ))
+    items.append(Slider(
+        key="face.wink_min_s",
+        label="подмигивание: сколько держать, с",
+        group="Моргание и глаза",
+        lo=0.10, hi=0.80, step=0.05,
+        get=lambda cfg: cfg.face.wink_min_s,
+        set=lambda cfg, v: setattr(cfg.face, "wink_min_s", float(v)),
+        fmt="{:.2f}",
+        hint="один глаз закрыт дольше этого — подмигивание",
+    ))
+    items.append(Slider(
+        key="face.eyes_closed_cap_s",
+        label="закрытые глаза: предел, с",
+        group="Моргание и глаза",
+        lo=1.0, hi=10.0, step=0.5,
+        get=lambda cfg: cfg.face.eyes_closed_cap_s,
+        set=lambda cfg, v: setattr(cfg.face, "eyes_closed_cap_s", float(v)),
+        fmt="{:.1f}",
+        hint="дольше — ничего не засчитываем, пока глаза не откроются",
+    ))
+    items.append(Slider(
+        key="face.gaze_speed_px_s",
+        label="мышь глазами: скорость",
+        group="Моргание и глаза",
+        lo=100.0, hi=1500.0, step=25.0,
+        get=lambda cfg: cfg.face.gaze_speed_px_s,
+        set=lambda cfg, v: setattr(cfg.face, "gaze_speed_px_s", float(v)),
+        fmt="{:.0f}",
+        hint="пикселей в секунду, когда зрачок у края глаза",
+    ))
+    items.append(Slider(
+        key="face.gaze_deadzone",
+        label="мышь глазами: мёртвая зона",
+        group="Моргание и глаза",
+        lo=0.05, hi=0.60, step=0.01,
+        get=lambda cfg: cfg.face.gaze_deadzone,
+        set=lambda cfg, v: setattr(cfg.face, "gaze_deadzone", float(v)),
+        fmt="{:.2f}",
+        hint="доля полуширины глаза: в этой зоне курсор стоит",
+    ))
+
+    # ---------------- надёжность руки ----------------
+    items.append(Slider(
+        key="hand.min_score",
+        label="уверенность, что это рука",
+        group="Надёжность руки",
+        lo=0.20, hi=0.90, step=0.05,
+        get=lambda cfg: cfg.hand.min_score,
+        set=lambda cfg, v: setattr(cfg.hand, "min_score", float(v)),
+        fmt="{:.2f}",
+        hint="выше — меньше ложных «рук» там, где их нет; ниже — ловит дальние руки",
+    ))
+
     # ---------------- две руки ----------------
     items.append(Slider(
         key="hand.two_hand_zoom_gain",
@@ -323,7 +387,8 @@ def changed_values(cfg: AppConfig, sliders: Sequence[Slider] = SLIDERS) -> List[
 # Ползунки рисуются сами, а не средствами OpenCV: так подписи гарантированно
 # на русском (встроенные ползунки HighGUI на Windows показывают кириллицу
 # «кракозябрами»), а вид совпадает с остальным окном.
-PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и две руки")
+PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и руки",
+              "Моргание и глаза")
 
 _BG = (26, 26, 30)
 _PANEL = (34, 34, 39)
@@ -455,15 +520,22 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
                 toggles: Sequence[Toggle] = TOGGLES) -> List[Page]:
     """Страницы: режимы / курсор / щипок / голова и две руки."""
     groups_all = groups(sliders)
-    cursor = [s for name, items in groups_all if name.startswith("Курсор") for s in items]
-    pinch = [s for name, items in groups_all if name.startswith("Щипок") for s in items]
+    def pick(prefixes):
+        return [s for name, items in groups_all
+                if any(name.startswith(p) for p in prefixes) for s in items]
+
+    cursor = pick(("Курсор",))
+    pinch = pick(("Щипок",))
+    eyes = pick(("Моргание",))
     rest = [s for name, items in groups_all
-            if not name.startswith("Курсор") and not name.startswith("Щипок") for s in items]
+            if not any(name.startswith(p) for p in ("Курсор", "Щипок", "Моргание"))
+            for s in items]
     return [
         Page(PAGE_ORDER[0], [], list(toggles), presets=True),
         Page(PAGE_ORDER[1], cursor),
         Page(PAGE_ORDER[2], pinch),
         Page(PAGE_ORDER[3], rest),
+        Page(PAGE_ORDER[4], eyes),
     ]
 
 

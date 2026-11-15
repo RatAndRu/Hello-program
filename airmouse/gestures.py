@@ -705,6 +705,65 @@ def synthetic_hand(
 # --------------------------------------------------------------------------- #
 #  Управление двумя руками
 # --------------------------------------------------------------------------- #
+class HandGate:
+    """Фильтр «это точно рука?».
+
+    Нейросеть иногда находит кисть там, где её нет (складки одежды, лицо,
+    тени). Такой «фантом» двигает курсор и нажимает — поэтому детекцию
+    проверяем трижды:
+
+    * уверенность детектора не ниже ``hand.min_score``;
+    * размер ладони правдоподобный (``min_palm``..``max_palm``) — фантомы
+      обычно крошечные или раздутые на пол-кадра;
+    * рука видна в ``confirm_frames`` кадрах подряд, и только потом начинает
+      управлять; исчезает — перестаёт управлять после ``release_frames``
+      промахов (чтобы не мигала на каждом пропущенном кадре).
+    """
+
+    def __init__(self, cfg) -> None:
+        self.cfg = cfg
+        self.active = False
+        self._seen = 0
+        self._missing = 0
+        self._last: list = []
+
+    def plausible(self, hand) -> bool:
+        cfg = self.cfg
+        if float(getattr(hand, "score", 1.0)) < float(getattr(cfg, "min_score", 0.0)):
+            return False
+        try:
+            palm = float(hand.palm_size)
+        except Exception:
+            return True
+        return float(getattr(cfg, "min_palm", 0.0)) <= palm <= float(
+            getattr(cfg, "max_palm", 10.0))
+
+    def reset(self) -> None:
+        self.active = False
+        self._seen = 0
+        self._missing = 0
+        self._last = []
+
+    def update(self, hands) -> list:
+        """Вернуть только те руки, по которым можно управлять."""
+        good = [h for h in hands if self.plausible(h)]
+        if good:
+            self._seen += 1
+            self._missing = 0
+            self._last = good
+            if self._seen >= max(int(self.cfg.confirm_frames), 1):
+                self.active = True
+            return good if self.active else []
+        # рука пропала: пару кадров тянем последнюю известную, чтобы курсор и
+        # жест не мигали от одного пропущенного кадра, потом честно отпускаем
+        self._seen = 0
+        self._missing += 1
+        if self.active and self._missing >= max(int(self.cfg.release_frames), 1):
+            self.active = False
+            self._last = []
+        return self._last if self.active else []
+
+
 TWO_HAND_MODES = ("off", "zoom", "scroll")
 
 

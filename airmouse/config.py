@@ -116,6 +116,11 @@ class HandConfig:
     second_hand: str = "draw"          # draw | control | ignore — роль второй руки
     min_detection_confidence: float = 0.6
     min_tracking_confidence: float = 0.6
+    min_score: float = 0.50           # уверенность детектора ниже — рука не считается
+    confirm_frames: int = 1           # сколько кадров подряд рука должна быть видна
+    release_frames: int = 2           # сколько кадров «пропажи» терпим (сглаживание)
+    min_palm: float = 0.03            # ладонь меньше этого (доли кадра) — мусор
+    max_palm: float = 0.75            # и больше этого тоже
     pose_stable_frames: int = 3        # сколько кадров жест должен держаться
     pinch_ratio: float = 0.32          # «щипок» начинается
     pinch_release_ratio: float = 0.42  # и отпускается (гистерезис)
@@ -148,8 +153,10 @@ class FaceConfig:
     every_n_frames: int = 2            # экономия CPU: лицо раз в N кадров
     ear_blink: float = 0.19            # порог «глаз закрыт»
     ear_open: float = 0.25             # порог «глаз открыт» (гистерезис)
-    blink_min_s: float = 0.06
+    blink_min_s: float = 0.09          # «время захвата»: мгновенный тик не считается
     blink_max_s: float = 0.45
+    wink_min_s: float = 0.25           # подмигивание держим дольше, чем моргание
+    eyes_closed_cap_s: float = 4.0     # дольше — не засчитываем, пока глаза не откроются
     double_blink_window_s: float = 0.90
     smile_delta: float = 0.055         # прирост ширины улыбки к нейтрали
     smile_hold_s: float = 0.65

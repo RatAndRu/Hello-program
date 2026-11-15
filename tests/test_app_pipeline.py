@@ -91,10 +91,10 @@ def test_drag_holds_and_releases_button():
 def test_double_blink_clicks():
     neutral = (None, synthetic_face())
     frames = [neutral] * 4  # калибровка нейтрали
-    for _ in range(3):
+    for _ in range(4):      # глаза закрыты дольше «времени захвата»
         frames.append((None, synthetic_face(ear=(0.08, 0.08))))
-    frames.append(neutral)
-    for _ in range(3):
+    frames += [neutral] * 2  # между морганиями глаза успевают открыться
+    for _ in range(4):
         frames.append((None, synthetic_face(ear=(0.08, 0.08))))
     frames += [neutral] * 4
     app = make_app(frames)

@@ -43,9 +43,9 @@ class Tracker(Protocol):  # pragma: no cover - протокол
     def close(self) -> None: ...
 
 
-def _to_hand(landmarks, handedness: str = "Right") -> Hand:
+def _to_hand(landmarks, handedness: str = "Right", score: float = 1.0) -> Hand:
     pts = np.array([[lm.x, lm.y, getattr(lm, "z", 0.0)] for lm in landmarks], dtype=np.float32)
-    return Hand(pts, handedness=handedness, score=1.0)
+    return Hand(pts, handedness=handedness, score=float(score))
 
 
 class MediaPipeTracker:
@@ -146,12 +146,13 @@ class MediaPipeTracker:
         hands_res = self._hands.process(rgb)
         if hands_res.multi_hand_landmarks:
             for i, hlm in enumerate(hands_res.multi_hand_landmarks[: self.hand_cfg.max_hands]):
-                label = "Right"
+                label, score = "Right", 1.0
                 try:
-                    label = hands_res.multi_handedness[i].classification[0].label
+                    cls = hands_res.multi_handedness[i].classification[0]
+                    label, score = cls.label, float(getattr(cls, "score", 1.0))
                 except Exception:
                     pass
-                res.hands.append(_to_hand(hlm.landmark, label))
+                res.hands.append(_to_hand(hlm.landmark, label, score))
         if self._face is not None:
             face_res = self._face.process(rgb)
             if face_res.multi_face_landmarks:
@@ -168,13 +169,14 @@ class MediaPipeTracker:
         res = FrameResult(backend="mediapipe/tasks")
         hand_res = self._hand_landmarker.detect_for_video(image, ts)
         for i, lms in enumerate(hand_res.hand_landmarks or []):
-            label = "Right"
+            label, score = "Right", 1.0
             try:
                 cats = hand_res.handedness[i]
                 label = cats[0].category_name or cats[0].display_name or "Right"
+                score = float(getattr(cats[0], "score", 1.0))
             except Exception:
                 pass
-            res.hands.append(_to_hand(lms, label))
+            res.hands.append(_to_hand(lms, label, score))
         if self._face_landmarker is not None:
             face_res = self._face_landmarker.detect_for_video(image, ts)
             if face_res.face_landmarks:

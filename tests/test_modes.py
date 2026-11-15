@@ -179,7 +179,7 @@ def _blink_script(hands, frames=26):
     """Рука + два моргания подряд (двойное моргание -> левый клик)."""
     script = []
     for i in range(frames):
-        closed = i in (14, 15, 18, 19)
+        closed = 13 <= i <= 16 or 18 <= i <= 21
         ear = (0.08, 0.08) if closed else (0.30, 0.30)
         script.append((hands, synthetic_face(ear=ear)))
     return script
