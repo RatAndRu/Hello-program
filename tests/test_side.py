@@ -156,6 +156,22 @@ def test_rock_and_three_with_back_side():
     assert events == ["three_fingers_back"]
 
 
+def test_overlay_draws_side_line():
+    """Строка «сторона кисти» реально попадает в кадр (а не только в state)."""
+    import numpy as np
+
+    from airmouse import overlay
+
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+    base = dict(fps=30.0, backend="ИИ MediaPipe (нейросеть)", actions_on=True,
+                hand_seen=True, face_seen=False, version="тест")
+    quiet = overlay.render(frame.copy(), overlay.OverlayState(**base), hands=[])
+    loud = overlay.render(frame.copy(),
+                          overlay.OverlayState(side_text="сторона кисти: тыл", **base),
+                          hands=[])
+    assert not np.array_equal(quiet, loud)
+
+
 def test_default_mapping_gives_other_actions():
     mapping = AppConfig().actions.mapping
     assert mapping["ok_sign"] == "double_click"

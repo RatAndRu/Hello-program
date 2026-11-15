@@ -14,7 +14,7 @@
 
 ## 0. Быстрый старт (Windows)
 
-Всё уже упаковано: **`release/AirMouse-0.8.0.zip`** (или `release/` после
+Всё уже упаковано: **`release/AirMouse-0.8.1.zip`** (или `release/` после
 `python packaging/make_zip.py`).
 
 1. Распакуйте архив в любую папку.

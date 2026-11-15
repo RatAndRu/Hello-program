@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.8.0",
+        version="0.8.1",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -65,13 +65,15 @@ def main() -> int:
     palm = synthetic_hand(center=(0.66, 0.66), scale=0.26)
 
     # 1. Общий вид: рука + лицо + сводка
-    st = state(pose="ладонь", expression="улыбка 62%", ear=0.29, smile=0.62, hand_count=1)
+    st = state(pose="ладонь", expression="улыбка 62%", ear=0.29, smile=0.62, hand_count=1,
+               side_text="сторона кисти: ладонь")
     save(overlay.render(background(), st, hands=[palm], face=face), "overlay-main.png")
 
     # 2. Крупный план кисти: 21 точка, подписи пальцев
     point_hand = synthetic_hand(center=(0.46, 0.66), scale=0.30,
                                curl={"middle": 1.0, "ring": 1.0, "pinky": 1.0})
-    st = state(pose="указательный", expression="нейтрально", hand_count=1)
+    st = state(pose="указательный", expression="нейтрально", hand_count=1,
+               side_text="сторона кисти: ладонь")
     save(overlay.render(background(), st, hands=[point_hand], face=None), "overlay-hand.png")
 
     # 3. «Прицел»: пальцы сходятся, курсор заморожен на крестике
@@ -86,6 +88,7 @@ def main() -> int:
     right = synthetic_hand(center=(0.70, 0.78), scale=0.18)
     st = state(pose="ладонь", expression="нейтрально", hand_count=2,
                two_hand_hint="две ладони: разведите руки → масштаб",
+               side_text="сторона кисти: ладонь",
                split_roles=True, roles_text="роли: 1 — курсор, 2 — клики",
                modes_text="режимы: рука + 2-я рука: нажатия + лицо")
     save(overlay.render(background(), st, hands=[left, right], face=None, primary=0),

@@ -348,6 +348,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     extras = []
     if state.modes_text:
         extras.append((state.modes_text, INFO))
+    if state.side_text:             # какая стороной повёрнута кисть
+        extras.append((state.side_text, DIM))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
         extras.append((state.roles_text, ACCENT))
     if state.settings_open:
