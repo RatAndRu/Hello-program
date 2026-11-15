@@ -17,7 +17,6 @@ import sys
 import time
 import traceback
 import threading
-import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -571,17 +570,31 @@ def _fatal(exc: BaseException) -> None:
 
 
 def _ensure_std_streams() -> None:
-    """В оконной сборке PyInstaller sys.stdout/sys.stderr = None.
+    """Приводим sys.stdout/sys.stderr в рабочее состояние.
 
-    Без этого любая печать (в том числе ``--version`` или ``--help`` от argparse)
-    падает с AttributeError — то есть EXE без консоли просто не работает.
+    Две реальные проблемы, найденные на сборке EXE:
+
+    * в оконной сборке PyInstaller ``sys.stdout``/``sys.stderr`` = ``None`` —
+      любая печать (``--version``, ``--help`` от argparse) падала с
+      ``AttributeError`` и EXE молча закрывался;
+    * консоль Windows по умолчанию кодирует вывод в cp866/cp1252 — русский
+      текст ронял процесс с ``UnicodeEncodeError``. Поэтому принудительно
+      переключаем потоки на UTF-8 с заменой неподдерживаемых символов.
     """
     devnull = None
     for name in ("stdout", "stderr"):
-        if getattr(sys, name) is None:
+        stream = getattr(sys, name, None)
+        if stream is None:
             if devnull is None:
                 devnull = open(os.devnull, "w", encoding="utf-8", errors="replace")
             setattr(sys, name, devnull)
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:  # поток без поддержки reconfigure — не критично
+                pass
 
 
 def _write_crash_log(exc: BaseException) -> Optional[Path]:

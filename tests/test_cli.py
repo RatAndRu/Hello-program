@@ -27,3 +27,35 @@ def test_parser_has_run_subcommand():
     assert args.command == "run"
     assert args.backend == "classical"
     assert args.warmup == 3.0
+
+
+def test_ensure_std_streams_forces_utf8(monkeypatch):
+    """Консоль Windows с cp1252 не должна ронять печать русского текста."""
+    import io
+    import sys
+
+    from airmouse.cli import _ensure_std_streams
+
+    buf = io.BytesIO()
+    stream = io.TextIOWrapper(buf, encoding="cp1252", write_through=True)
+    monkeypatch.setattr(sys, "stdout", stream)
+    try:
+        _ensure_std_streams()
+        print("Проверка: русский текст", file=sys.stdout)
+        sys.stdout.flush()
+        assert "Проверка: русский текст".encode("utf-8") in buf.getvalue()
+    finally:
+        monkeypatch.undo()
+        stream.detach()
+
+
+def test_ensure_std_streams_replaces_none(monkeypatch):
+    import sys
+
+    from airmouse.cli import _ensure_std_streams
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    _ensure_std_streams()
+    assert sys.stdout is not None and sys.stderr is not None
+    print("ok", file=sys.stdout)
