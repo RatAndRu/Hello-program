@@ -210,7 +210,14 @@ class FaceConfig:
     gaze_calibration: Dict[str, Any] = field(default_factory=dict)  # точки + коэффициенты
     gaze_deadzone_px: int = 12         # дрожание зрачка в пикселях: не двигаем
     gaze_cursor_alpha: float = 0.55    # сглаживание позиции курсора (1 — без)
+    gaze_calib_mode: str = "pursuit"   # pursuit — «веди взгляд за точкой», points — 9 точек
+    gaze_pursuit_s: float = 13.0       # сколько секунд ведём взгляд за точкой
     gaze_head_check_s: float = 6.0     # сколько вертеть головой на калибровке
+    gaze_head_intro_s: float = 8.0     # сколько читать подсказку перед поворотом головы
+    gaze_head_count_s: float = 3.0     # отсчёт «3…2…1» перед фазой головы
+    gaze_autotune: bool = True         # подобрать сглаживание/зону по калибровке
+    gaze_recalib_scale: float = 0.25   # лицо уехало на 25% — пора перекалибровать
+    gaze_recalib_cooldown_s: float = 60.0
     gaze_dwell_click: bool = False     # клик удержанием взгляда (по умолчанию — щипком)
     gaze_dwell_s: float = 0.6          # 400–800 мс по исследованиям, 600 — удобнее
     gaze_dwell_px: int = 60            # радиус «удержания» на экране
@@ -295,6 +302,7 @@ class AppConfig:
     log_file: str = "logs/airmouse.log"
     head_pointer: bool = False
     gaze_pointer: bool = False         # курсор двигают глаза (зрачки)
+    motion_profile: Dict[str, Any] = field(default_factory=dict)  # личный диапазон движений
     start_paused: bool = False
     warmup_s: float = 2.0              # первые секунды не нажимаем: дайте встать в кадр
 

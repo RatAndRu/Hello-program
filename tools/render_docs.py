@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.16.0",
+        version="0.17.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -111,15 +111,30 @@ def main() -> int:
     panel.goto_page(4)                     # страница «Моргание и глаза»
     save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8)), "overlay-settings-eyes.png")
 
-    # 6. Калибровка взгляда: «посмотрите в угол и нажмите пробел»
-    # калибровка идёт на весь монитор: прицел — в самом углу экрана
+    # 6. Калибровка взгляда: красная точка ползёт по экрану, за ней след
+    from airmouse.gaze import PURSUIT_DURATION_S, pursuit_point
+
+    t = 6.0                                   # вторая строка, идём слева направо
+    trail = [pursuit_point(t - i / 30.0, PURSUIT_DURATION_S) for i in range(40, 0, -1)]
     st = state(pose="ладонь", expression="нейтрально", hand_count=1,
                gaze_text="взгляд: вправо", gaze_pointer=True,
-               calib_active=True, calib_target=(1.0, 0.0), calib_done=1,
-               calib_text="ВЗГЛЯД: правый верхний угол экрана  (2/5)")
+               calib_active=True, calib_pursuit=True, calib_trail=trail,
+               calib_progress=t / PURSUIT_DURATION_S,
+               calib_target=pursuit_point(t, PURSUIT_DURATION_S),
+               calib_text="ВЗГЛЯД: ведите взгляд за красной точкой  (7 с)"
+                          "   не отвлекайтесь на текст    ПРОБЕЛ — хватит    Esc — отмена")
     full = overlay.render_gaze_calibration((1920, 1080), st)
     small = cv2.resize(full, (960, 540), interpolation=cv2.INTER_AREA)
     save(small, "overlay-gaze-calib.png")
+
+    # 6б. Профиль движений: «улыбнитесь» — пороги подбираются по человеку
+    st = state(pose="ладонь", expression="улыбка 62%", hand_count=1,
+               profile_text="ПРОФИЛЬ ДВИЖЕНИЙ 2/5 · УЛЫБНИТЕСЬ",
+               profile_hint="как можно шире — и держите   (4 с, ПРОБЕЛ — пропустить, "
+                            "Esc — отмена)",
+               profile_progress=0.4)
+    save(overlay.render(background(), st, hands=[palm], face=face),
+         "overlay-motion-profile.png")
 
     # 7. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)

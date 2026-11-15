@@ -51,6 +51,123 @@ TARGET_TITLES = (
 # Сколько точек нужно, чтобы преобразование считалось надёжным (9 — сетка).
 TARGETS_TOTAL = len(CALIBRATION_TARGETS)
 
+# --------------------------------------------------------------------------- #
+#  Калибровка «веди взгляд за точкой» (smooth pursuit)
+# --------------------------------------------------------------------------- #
+# Так делает и Apple в Eye Tracking (iOS 18): «as a dot appears in different
+# locations, follow its movement with your eyes». Точечный мастер требует
+# попасть взглядом в угол секунду-две и не даёт никакой информации о динамике,
+# а плавное ведение даёт сразу: где именно взгляд смотрит на экран, насколько
+# быстро зрачок меняет положение и насколько он шумит.
+PURSUIT_ROWS = (0.10, 0.30, 0.50, 0.70, 0.90)
+PURSUIT_SWEEP_S = 2.6            # столько идёт проход по одной строке
+PURSUIT_MARGIN = 0.045           # отступ от края: точка у самого края не читается
+PURSUIT_DURATION_S = PURSUIT_SWEEP_S * len(PURSUIT_ROWS)
+
+
+def _pursuit_segments(duration: float) -> List[Tuple[str, int, float]]:
+    """Разбиение траектории на отрезки: проход по строке и переход на следующую.
+
+    Переходы нужны, чтобы точка не телепортировалась: если она просто «моргнёт»
+    с конца строки на начало следующей, глаз физически не успеет (саккада 30–80
+    мс плюс задержка зрачка), и такие кадры только испортят подгонку.
+    """
+    rows = len(PURSUIT_ROWS)
+    w_row, w_vert = 1.0, 0.14
+    total = rows * w_row + (rows - 1) * w_vert
+    unit = max(0.1, float(duration)) / total
+    segments: List[Tuple[str, int, float]] = []
+    for i in range(rows):
+        segments.append(("row", i, unit * w_row))
+        if i < rows - 1:
+            segments.append(("vert", i, unit * w_vert))
+    return segments
+
+
+def pursuit_point(t: float, duration: float = PURSUIT_DURATION_S) -> Tuple[float, float]:
+    """Где сейчас красная точка (нормированные координаты экрана).
+
+    Змейка по пяти строкам: слева направо, строка ниже — справа налево, между
+    строками — короткий плавный переход. Так взгляд проходит и углы, и середину
+    краёв, а предсказуемое непрерывное движение (в отличие от случайных прыжков)
+    удобно вести глазами — зрачок успевает «догнать» точку.
+    """
+    duration = max(0.1, float(duration))
+    t = min(max(0.0, float(t)), duration - 1e-6)
+    left = PURSUIT_MARGIN
+    span = 1.0 - 2.0 * PURSUIT_MARGIN
+    passed = 0.0
+    for kind, index, length in _pursuit_segments(duration):
+        if t <= passed + length or length <= 0.0:
+            u = 0.0 if length <= 0.0 else (t - passed) / length
+            u = min(max(u, 0.0), 1.0)
+            y = left + span * PURSUIT_ROWS[index]
+            if kind == "row":
+                forward = index % 2 == 0
+                x = left + span * (u if forward else 1.0 - u)
+                return (x, y)
+            # переход вниз: x стоит на краю строки, y едет к следующей
+            forward = index % 2 == 0
+            x = left + span * (1.0 if forward else 0.0)
+            y_next = left + span * PURSUIT_ROWS[index + 1]
+            return (x, y + (y_next - y) * u)
+        passed += length
+    y = left + span * PURSUIT_ROWS[-1]
+    x = left + span * (1.0 if (len(PURSUIT_ROWS) - 1) % 2 == 0 else 0.0)
+    return (x, y)
+
+
+def pursuit_metrics(samples: Sequence[Sequence[float]]) -> Dict[str, float]:
+    """Динамика взгляда по кадрам «вёл за точкой».
+
+    ``samples`` — пятёрки ``(t, gaze_u, gaze_v, screen_x, screen_y)``.
+    Возвращает:
+
+    * ``latency_ms`` — на сколько зрачок отстаёт от цели (по максимуму
+      корреляции скоростей);
+    * ``responsiveness`` — насколько согласованно двигаются цель и зрачок
+      (1 — идеально, 0 — зрачок живёт своей жизнью);
+    * ``speed`` — медианная скорость зрачка, «единиц зрачка в секунду».
+    """
+    rows = [tuple(float(v) for v in s) for s in samples if len(s) >= 5]
+    if len(rows) < 8:
+        return {"latency_ms": 0.0, "responsiveness": 0.0, "speed": 0.0, "frames": float(len(rows))}
+    data = np.asarray(rows, dtype=np.float64)
+    t, gx, gy, sx, sy = data[:, 0], data[:, 1], data[:, 2], data[:, 3], data[:, 4]
+    dt = float(np.median(np.diff(t))) if len(t) > 1 else 0.0
+    if dt <= 1e-6:
+        return {"latency_ms": 0.0, "responsiveness": 0.0, "speed": 0.0, "frames": float(len(rows))}
+    gvx, gvy = np.diff(gx) / dt, np.diff(gy) / dt
+    svx, svy = np.diff(sx) / dt, np.diff(sy) / dt
+    gspeed = np.hypot(gvx, gvy)
+    sspeed = np.hypot(svx, svy)
+
+    def corr(a: np.ndarray, b: np.ndarray) -> float:
+        if a.size < 4 or float(a.std()) < 1e-9 or float(b.std()) < 1e-9:
+            return 0.0
+        return float(np.clip(np.corrcoef(a, b)[0, 1], -1.0, 1.0))
+
+    # Задержку ищем по **вектору** скорости, а не по её величине: точка едет с
+    # ровной скоростью, и «модуль» почти не меняется — зато направление и знак
+    # компонент меняются на поворотах, и сдвиг по времени виден чётко.
+    best_r, best_lag = -2.0, 0
+    max_lag = 8
+    for lag in range(0, max_lag + 1):
+        if lag == 0:
+            ax, bx, ay, by = gvx, svx, gvy, svy
+        else:
+            ax, bx = gvx[lag:], svx[:-lag]
+            ay, by = gvy[lag:], svy[:-lag]
+        r = 0.5 * (corr(ax, bx) + corr(ay, by))
+        if r > best_r:
+            best_r, best_lag = r, lag
+    return {
+        "latency_ms": float(best_lag * dt * 1000.0),
+        "responsiveness": float(np.clip(best_r, 0.0, 1.0)),
+        "speed": float(np.median(gspeed)),
+        "frames": float(len(rows)),
+    }
+
 
 @dataclass
 class GazeCalibration:
@@ -67,6 +184,10 @@ class GazeCalibration:
     feature: str = ""                                 # как считался признак
     stale: bool = False                               # старая (аффинная) калибровка
     head_gain: List[float] = field(default_factory=lambda: [0.0, 0.0])
+    latency_ms: float = 0.0          # насколько зрачок отстаёт от цели
+    responsiveness: float = 0.0      # согласованность движения с целью (0..1)
+    pursuit_frames: int = 0          # сколько кадров снято «ведением»
+    face_scale: float = 0.0          # межзрачковое расстояние при калибровке
 
     # ------------------------------------------------------------------ #
     @property
@@ -81,8 +202,34 @@ class GazeCalibration:
         self.points.append((float(gaze_x), float(gaze_y), float(screen_x), float(screen_y)))
 
     # ------------------------------------------------------------------ #
-    def fit(self) -> bool:
-        """Подобрать гомографию по накопленным точкам (DLT, наименьшие квадраты)."""
+    def fit(self, robust: bool = True) -> bool:
+        """Подобрать гомографию по накопленным точкам (DLT, наименьшие квадраты).
+
+        Когда точек много (калибровка «веди взглядом»), подгонка делается
+        **с отбраковкой**: пара выбросов — моргание, сдвиг головы, — иначе
+        уводит всю калибровку. Отбрасываем худшие 15% по промаху и подгоняем
+        заново (два прохода).
+        """
+        if robust and len(self.points) >= 32:
+            for _ in range(2):
+                if not self._fit_once() or not self.ready:
+                    return False
+                residuals = []
+                for gx, gy, sx, sy in self.points:
+                    px, py = self.apply(gx, gy)
+                    residuals.append(max(abs(px - sx), abs(py - sy)))
+                if max(residuals) < 0.01:
+                    # подгонка и так точная: выбросов нет, точки не выбрасываем
+                    return True
+                cutoff = float(np.quantile(residuals, 0.85))
+                kept = [p for p, r in zip(self.points, residuals) if r <= cutoff]
+                if len(kept) < 12 or len(kept) == len(self.points):
+                    break
+                self.points = kept
+            return self._fit_once()
+        return self._fit_once()
+
+    def _fit_once(self) -> bool:
         if len(self.points) < 3:
             return False
         data = np.asarray(self.points, dtype=np.float64)
@@ -211,7 +358,11 @@ class GazeCalibration:
         return {"points": [[round(v, 5) for v in p] for p in self.points],
                 "H": [round(v, 6) for v in self.H],
                 "feature": self.feature or "head",
-                "head_gain": [round(v, 4) for v in self.head_gain]}
+                "head_gain": [round(v, 4) for v in self.head_gain],
+                "latency_ms": round(self.latency_ms, 1),
+                "responsiveness": round(self.responsiveness, 3),
+                "pursuit_frames": int(self.pursuit_frames),
+                "face_scale": round(self.face_scale, 4)}
 
     @classmethod
     def from_dict(cls, data: Dict[str, object] | None) -> "GazeCalibration":
@@ -225,6 +376,10 @@ class GazeCalibration:
             gain = data.get("head_gain") or []
             if len(gain) == 2:
                 calib.head_gain = [float(gain[0]), float(gain[1])]
+            calib.latency_ms = float(data.get("latency_ms") or 0.0)
+            calib.responsiveness = float(data.get("responsiveness") or 0.0)
+            calib.pursuit_frames = int(data.get("pursuit_frames") or 0)
+            calib.face_scale = float(data.get("face_scale") or 0.0)
             raw_h = data.get("H") or []
             if len(raw_h) == 9:
                 calib.H = [float(v) for v in raw_h]

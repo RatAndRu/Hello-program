@@ -302,6 +302,86 @@ def check_gaze_calibration() -> Check:
                  f"поворот головы ±20°: сдвиг {jump * 100:.1f}% экрана")
 
 
+def check_gaze_pursuit() -> Check:
+    """Калибровка «веди взгляд за точкой»: точность, задержка и фазы мастера."""
+    import math
+
+    from .gaze import PURSUIT_DURATION_S, GazeCalibration, pursuit_metrics, pursuit_point
+
+    def gaze(sx, sy):
+        return ((sx - 0.5) * 0.6, (sy - 0.5) * 0.3)
+
+    # траектория: 13 секунд змейкой по пяти строкам — покрывает весь экран
+    samples = []
+    for i in range(390):
+        t = i / 30.0
+        sx, sy = pursuit_point(t, PURSUIT_DURATION_S)
+        gx, gy = gaze(sx, sy)
+        samples.append((t, gx, gy, sx, sy))
+    calib = GazeCalibration(points=[(s[1], s[2], s[3], s[4]) for s in samples])
+    fitted = calib.fit()
+    worst = 0.0
+    for sx, sy in ((0.1, 0.2), (0.5, 0.5), (0.85, 0.9)):
+        px, py = calib.apply(*gaze(sx, sy))
+        worst = max(worst, abs(px - sx), abs(py - sy))
+    # та же траектория, но зрачок отстаёт на три кадра: мастер обязан это заметить
+    lagged = [(s[0], *gaze(*pursuit_point(max(0.0, s[0] - 0.1), PURSUIT_DURATION_S)),
+               s[3], s[4]) for s in samples]
+    metrics = pursuit_metrics(lagged)
+    latency_ok = abs(metrics["latency_ms"] - 100.0) <= 40.0
+    ok = bool(fitted and calib.ready and worst < 0.03 and latency_ok
+              and metrics["responsiveness"] > 0.5 and len(calib.points) > 300)
+    return Check("калибровка взгляда по движущейся точке", ok,
+                 f"проб={len(calib.points)}, ошибка={worst * 100:.1f}% экрана, "
+                 f"задержка зрачка={metrics['latency_ms']:.0f} мс (ждали ~100), "
+                 f"согласованность={metrics['responsiveness']:.2f}")
+
+
+def check_motion_profile() -> Check:
+    """Профиль движений: личные пороги вместо общих (щипок, улыбка, присед)."""
+    from .profile import MotionProfile, MotionWizard
+
+    wizard = MotionWizard()
+    t = 0.0
+    # щипок: человек сводит пальцы до 0.10 и разжимает до 0.34
+    for i in range(4000):
+        if wizard.done:
+            break
+        key = wizard.step.key
+        value = {
+            "pinch": 0.10 + 0.24 * (i % 2),
+            "smile": 0.11,
+            "brow": 0.12,
+            "mouth": 0.78,
+            "squat": 0.62,
+        }[key]
+        t += 1 / 30.0
+        wizard.update(1 / 30.0, **{key: value})
+    prof = wizard.finish()
+    suggested = prof.suggest()
+    limits = {
+        "pinch_ratio": (0.18, 0.55),
+        "smile_delta": (0.030, 0.120),
+        "brow_delta": (0.025, 0.100),
+        "mouth_open_ratio": (0.35, 0.80),
+        "squat_down": (0.28, 0.80),
+        "squat_up": (0.10, 0.40),
+    }
+    inside = all(low <= suggested.get(k, low) <= high
+                 for k, (low, high) in limits.items())
+    personal = (suggested.get("pinch_ratio", 0) > 0.18
+                and suggested.get("smile_delta", 0) > 0.030
+                and suggested.get("squat_down", 0) < 0.62)
+    roundtrip = MotionProfile.from_dict(prof.to_dict()).pinch_open == prof.pinch_open
+    ok = bool(prof.pinch_range > 0.15 and inside and personal and roundtrip
+              and len(suggested) == 6)
+    return Check("профиль движений под человека", ok,
+                 f"щипок {prof.pinch_closed:.2f}…{prof.pinch_open:.2f}, "
+                 f"порог щипка={suggested.get('pinch_ratio', 0):.2f}, "
+                 f"улыбка={suggested.get('smile_delta', 0):.3f}, "
+                 f"присед={suggested.get('squat_down', 0):.2f}")
+
+
 def check_body_squats() -> Check:
     """Тело: приседания считаются, наклон и руки вверх ловятся."""
     from .body import BodyFSM, measure_body, synthetic_body
@@ -790,6 +870,8 @@ CHECKS: List[Callable[[], Check]] = [
     check_blink_rules,
     check_hand_gate,
     check_gaze_calibration,
+    check_gaze_pursuit,
+    check_motion_profile,
     check_body_squats,
     check_head_gain,
     check_gaze_dwell,

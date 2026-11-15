@@ -18,14 +18,20 @@ from .camera import ThreadedCamera
 from . import keys
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
+from .profile import MotionProfile, MotionWizard
 from .gaze import (
     screen_point,
     CALIBRATION_TARGETS,
     TARGET_TITLES,
+    PURSUIT_DURATION_S,
+    PURSUIT_MARGIN,
+    PURSUIT_ROWS,
     GazeCalibration,
     GazeCursor,
     GazeDwell,
     average_gaze,
+    pursuit_metrics,
+    pursuit_point,
 )
 from .body import BodyFSM, measure_body
 from .headpose import HeadPoseEstimator
@@ -128,6 +134,9 @@ class AirMouseApp:
         )
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
         self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
+        self._gaze_drift_at = -1e9              # когда говорили «лицо уехало, калибруй»
+        self.motion_wizard: Optional[MotionWizard] = None
+        self._motion_at = 0.0                   # время прошлого кадра профиля
         self._body_counter = 0                  # прореживание позы тела
         # поворот головы: чтобы курсор не прыгал, когда человек вертит головой,
         # но продолжает смотреть в ту же точку экрана
@@ -493,11 +502,14 @@ class AirMouseApp:
                 events += self.two_hand_fsm.update(hands, now)
             if self.router.head_pointer and self._metrics is not None:
                 events.extend(self._head_pointer_events(now))
+            if self.motion_wizard is not None:
+                self._tick_motion_profile(now)
             if self.calibrating:
                 # мастер калибровки: копим зрачок, ничего не нажимаем
                 self._tick_gaze_calibration(now)
             elif self.router.gaze_pointer and self._metrics is not None:
                 events.extend(self._gaze_pointer_events(now))
+                self._note_gaze_drift(now)
 
         self.stats.frames += 1
         self.stats.hand_frames += 1 if self._hands or self._shape is not None else 0
@@ -515,9 +527,9 @@ class AirMouseApp:
             # в момент перетаскивания ползунка.
             return events
 
-        if self.calibrating:
-            # Пока идёт калибровка взгляда, жесты не нажимают: человек смотрит
-            # в углы экрана, а не управляет мышью.
+        if self.calibrating or self.motion_wizard is not None:
+            # Пока идёт калибровка взгляда или профиль движений, жесты не
+            # нажимают: человек в это время выполняет упражнения, а не рулит.
             return events
 
         self._note_palm_hint(now)
@@ -783,23 +795,138 @@ class AirMouseApp:
         log.info("Ладонь не распознана: %s", hint)
 
     # ------------------------------------------------------------------ #
-    #  Калибровка взгляда: «посмотрите в угол и нажмите пробел»
+    #  Профиль движений: личный диапазон рук, мимики и тела (клавиша N)
     # ------------------------------------------------------------------ #
-    def start_gaze_calibration(self) -> str:
-        """Начать калибровку взгляда: 9 точек, затем проверка поворота головы."""
+    def start_motion_profile(self) -> str:
+        """Мастер «профиля движений»: замерить свой диапазон вместо среднего.
+
+        Взгляду калибровка нужна, потому что «палец зрачка» сам по себе не
+        говорит, куда человек смотрит. Рукам, лицу и телу она в этом смысле не
+        нужна — но их **размах** у всех разный, и общий порог кому-то мал, а
+        кому-то велик. Здесь измеряем размах и ставим пороги по нему.
+        """
+        if self.calibrating:
+            return "сначала закончите калибровку взгляда"
+        self.motion_wizard = MotionWizard()
+        self._motion_at = 0.0
+        text = ("профиль движений: сейчас по очереди разожмите пальцы, улыбнитесь, "
+                "поднимите брови, откройте рот и присядьте — всё по подсказке сверху")
+        self._events_log.appendleft(text)
+        log.info("Старт профиля движений (N)")
+        return text
+
+    def skip_motion_step(self) -> str:
+        """ПРОБЕЛ: пропустить текущий шаг профиля."""
+        if self.motion_wizard is None:
+            return ""
+        done = self.motion_wizard.skip()
+        if done:
+            return self._finish_motion_profile()
+        self._events_log.appendleft(self.motion_wizard.text())
+        return self.motion_wizard.text()
+
+    def cancel_motion_profile(self) -> str:
+        self.motion_wizard = None
+        self._events_log.appendleft("профиль движений отменён")
+        return "профиль движений отменён"
+
+    def _motion_features(self) -> Dict[str, Optional[float]]:
+        """Текущие признаки для мастера профиля (нет данных — ``None``)."""
+        pinch: Optional[float] = None
+        if self._hands:
+            try:
+                pinch = float(analyze_hand(self._hands[0], self.cfg.hand.pointer_source).pinch)
+            except Exception:               # кривые landmarks — просто пропускаем кадр
+                pinch = None
+        fsm = self.face_fsm
+        smile = float(getattr(fsm, "smile_score", 0.0))
+        brow = float(getattr(fsm, "brow_score", 0.0))
+        mouth: Optional[float] = None
+        if self._metrics is not None and getattr(self._metrics, "valid", False):
+            mouth = float(self._metrics.mouth_open)
+        body = getattr(self.body_fsm, "metrics", None)
+        squat = float(getattr(body, "squat", 0.0)) if body is not None else None
+        return {"pinch": pinch, "smile": smile, "brow": brow,
+                "mouth": mouth, "squat": squat}
+
+    def _tick_motion_profile(self, now: float) -> None:
+        """Один кадр мастера: отдать ему текущие признаки и проверить время."""
+        wizard = self.motion_wizard
+        if wizard is None:
+            return
+        dt = 0.0 if self._motion_at <= 0.0 else max(0.0, now - self._motion_at)
+        self._motion_at = now or 1e-6
+        if wizard.update(dt, **self._motion_features()):
+            self._finish_motion_profile()
+
+    def _finish_motion_profile(self) -> str:
+        """Свести замеры в профиль, применить пороги и сохранить в настройках."""
+        wizard = self.motion_wizard
+        self.motion_wizard = None
+        if wizard is None:
+            return ""
+        prof = wizard.finish()
+        suggested = prof.suggest()
+        applied = []
+        for key, value in suggested.items():
+            if hasattr(self.cfg.hand, key):
+                setattr(self.cfg.hand, key, value)
+            elif hasattr(self.cfg.face, key):
+                setattr(self.cfg.face, key, value)
+            elif hasattr(self.cfg.body, key):
+                setattr(self.cfg.body, key, value)
+            else:
+                continue
+            applied.append(f"{key}={value:g}")
+        self.cfg.motion_profile = prof.to_dict()
+        text = prof.text()
+        if applied:
+            text += ". пороги: " + ", ".join(applied)
+        else:
+            text += ". пороги не менялись: мало данных, повторите (N)"
+        self._events_log.appendleft(text)
+        log.info("%s", text)
+        return text
+
+    # ------------------------------------------------------------------ #
+    #  Калибровка взгляда: «ведите взгляд за красной точкой»
+    # ------------------------------------------------------------------ #
+    def start_gaze_calibration(self, mode: str = "") -> str:
+        """Мастер калибровки взгляда.
+
+        Фазы: ``pursuit`` — вести взгляд за медленно ползущей точкой;
+        ``head_intro`` — прочитать, что делать дальше (никуда смотреть не надо);
+        ``head_count`` — «3…2…1»; ``head`` — 6 секунд смотреть в центр и
+        медленно вертеть головой.
+
+        Старый режим ``points`` (девять прицелов по пробелу) остаётся запасным:
+        ``config set face.gaze_calib_mode=points``.
+        """
+        chosen = (mode or str(getattr(self.cfg.face, "gaze_calib_mode", "pursuit"))).lower()
+        points_mode = chosen == "points"
         self._calib = {
+            "mode": "points" if points_mode else "pursuit",
+            "phase": "points" if points_mode else "pursuit",
+            "phase_since": None,
+            "elapsed": 0.0,
             "index": 0,
-            "phase": "points",              # points -> head (поворот головы)
-            "samples": [],                  # накопленные положения зрачка
-            "points": [],                   # (gx, gy, sx, sy)
+            "samples": [],                  # «посмотрите и нажмите» или глаза в моменте
+            "points": [],                   # (gx, gy, sx, sy) для подгонки
+            "pursuit": [],                  # (t, gx, gy, sx, sy) — «вёл за точкой»
+            "dot": (PURSUIT_MARGIN, PURSUIT_ROWS[0]),
+            "trail": [],                    # след точки: видно, куда она уползла
             "head": [],                     # (gx, gy, yaw, pitch) для компенсации
-            "head_since": None,             # когда началась фаза поворота головы
+            "head_since": None,
         }
         self.gaze_cursor.reset()
         if not self.show_window:
             log.warning("Калибровка взгляда без окна: прицел на весь экран не "
                         "показать — запустите с окном (или нажмите F)")
-        text = f"калибровка взгляда: {TARGET_TITLES[0]} — смотрите и нажмите пробел"
+        if points_mode:
+            text = f"калибровка взгляда: {TARGET_TITLES[0]} — смотрите и нажмите пробел"
+        else:
+            text = ("калибровка взгляда: ведите взгляд за красной точкой — "
+                    f"{self._pursuit_s():.0f} с (ПРОБЕЛ — хватит, Esc — отмена)")
         self._events_log.appendleft(text)
         return text
 
@@ -807,12 +934,26 @@ class AirMouseApp:
     def calibrating(self) -> bool:
         return self._calib is not None
 
+    # ------------------------------------------------------------------ #
+    def _pursuit_s(self) -> float:
+        return float(getattr(self.cfg.face, "gaze_pursuit_s", PURSUIT_DURATION_S))
+
+    def _head_phase_s(self) -> float:
+        return float(getattr(self.cfg.face, "gaze_head_check_s", 6.0))
+
+    def _phase_elapsed(self) -> float:
+        if self._calib is None:
+            return 0.0
+        return float(self._calib.get("elapsed") or 0.0)
+
     def calibration_target(self) -> Optional[Tuple[float, float]]:
-        """Куда сейчас просим посмотреть (нормированные координаты экрана)."""
+        """Куда сейчас смотреть (нормированные координаты экрана)."""
         if self._calib is None:
             return None
-        if self._calib.get("phase") == "head":
-            # вторая фаза: смотрим в центр и вертим головой
+        phase = self._calib.get("phase")
+        if phase == "pursuit":
+            return self._calib.get("dot") or (0.5, 0.5)
+        if phase in ("head_intro", "head_count", "head"):
             return (0.5, 0.5)
         index = int(self._calib["index"])
         if 0 <= index < len(CALIBRATION_TARGETS):
@@ -822,10 +963,22 @@ class AirMouseApp:
     def calibration_text(self) -> str:
         if self._calib is None:
             return ""
-        if self._calib.get("phase") == "head":
-            left = self._head_phase_left()
+        phase = self._calib.get("phase")
+        elapsed = self._phase_elapsed()
+        if phase == "pursuit":
+            left = max(0.0, self._pursuit_s() - elapsed)
+            return (f"ВЗГЛЯД: ведите взгляд за красной точкой  ({left:.0f} с)   "
+                    "не отвлекайтесь на текст    ПРОБЕЛ — хватит    Esc — отмена")
+        if phase == "head_intro":
+            return ("ДАЛЬШЕ: 6 секунд смотреть в центр и медленно вертеть головой. "
+                    "Прочитали — жмите ПРОБЕЛ (или подождите, начнётся само)")
+        if phase == "head_count":
+            left = max(0.0, float(getattr(self.cfg.face, "gaze_head_count_s", 3.0)) - elapsed)
+            return f"ПРИГОТОВЬТЕСЬ: {int(left) + 1}…   смотрите в центр экрана"
+        if phase == "head":
+            left = max(0.0, self._head_phase_s() - elapsed)
             return ("ВЗГЛЯД: не отводя взгляда от центра, поверните голову "
-                    f"влево-вправо и вверх-вниз  ({left:.0f} с)    ПРОБЕЛ — сразу готово")
+                    f"влево-вправо и вверх-вниз  ({left:.0f} с)    ПРОБЕЛ — готово")
         index = int(self._calib["index"])
         if index < len(CALIBRATION_TARGETS):
             title = TARGET_TITLES[index]
@@ -839,13 +992,39 @@ class AirMouseApp:
         self._events_log.appendleft("калибровка взгляда отменена")
         return "калибровка взгляда отменена"
 
+    def _enter_phase(self, phase: str, now: float, note: str = "") -> None:
+        self._calib["phase"] = phase
+        self._calib["phase_since"] = now
+        self._calib["elapsed"] = 0.0
+        self._calib["samples"] = []
+        if note:
+            self._events_log.appendleft(note)
+
+    def _after_pursuit(self, now: float) -> str:
+        """Точка прошла экран — дальше проверка поворота головы (если включена)."""
+        if self._head_phase_s() > 0:
+            self._enter_phase("head_intro", now,
+                              "калибровка: прочитайте подсказку и жмите ПРОБЕЛ")
+            return self.calibration_text()
+        return self._finish_gaze_calibration()
+
     def confirm_gaze_point(self) -> str:
-        """Запомнить текущую точку и перейти к следующей (или закончить)."""
+        """ПРОБЕЛ: досрочно закончить текущую фазу или запомнить точку."""
         if self._calib is None:
             return ""
-        if self._calib.get("phase") == "head":
-            # вторая фаза: пробел = «с поворотом головы всё, сохраняй»
+        phase = self._calib.get("phase")
+        now = self._calib.get("now") or 0.0
+        if phase == "pursuit":
+            frames = len(self._calib["pursuit"])
+            if frames < 30:
+                return "ещё рано: проведите взглядом за точкой хотя бы секунду"
+            return self._after_pursuit(now)
+        if phase == "head_intro":
+            self._enter_phase("head_count", now)
+            return self.calibration_text()
+        if phase in ("head_count", "head"):
             return self._finish_gaze_calibration()
+        # --- запасной режим: девять прицелов --- #
         if not self.face_fsm.gaze_valid:
             return "зрачков не видно — калибровка невозможна"
         target = self.calibration_target()
@@ -860,55 +1039,154 @@ class AirMouseApp:
         self._calib["index"] = int(self._calib["index"]) + 1
         if int(self._calib["index"]) < len(CALIBRATION_TARGETS):
             return self.calibration_text()
+        return self._after_pursuit(now)
 
-        # Все точки сняты. Теперь короткая проверка поворота головы: человек
-        # смотрит в центр и вертит головой — по этим кадрам подбирается поправка.
-        if self._calib.get("phase") != "head" and self._head_phase_s() > 0:
-            self._calib["phase"] = "head"
-            self._calib["head_since"] = None
-            self._calib["samples"] = []
-            text = self.calibration_text()
-            self._events_log.appendleft("калибровка: теперь посмотрите в центр и повертите головой")
-            return text
-
-        return self._finish_gaze_calibration()
-
-    def _head_phase_s(self) -> float:
-        return float(getattr(self.cfg.face, "gaze_head_check_s", 6.0))
-
-    def _head_phase_left(self) -> float:
-        if self._calib is None or self._calib.get("head_since") is None:
-            return self._head_phase_s()
-        left = self._head_phase_s() - (time.monotonic() - float(self._calib["head_since"]))
-        return max(0.0, left)
-
+    # ------------------------------------------------------------------ #
     def _finish_gaze_calibration(self) -> str:
-        """Собрать калибровку: гомография по 9 точкам + поправка на поворот головы."""
-        head_samples = list(self._calib.get("head") or []) if self._calib else []
-        points = list(self._calib["points"]) if self._calib else []
+        """Собрать калибровку: гомография + поправка на голову + динамика взгляда."""
+        data = self._calib or {}
+        if data.get("mode") == "pursuit":
+            points = [(u, v, sx, sy) for (_t, u, v, sx, sy) in data.get("pursuit") or []]
+        else:
+            points = list(data.get("points") or [])
+        head_samples = list(data.get("head") or [])
         calib = GazeCalibration(points=points, feature="head")
-        calib.fit()
-        head_ok = calib.fit_head(head_samples)
+        fitted = calib.fit()
         self._calib = None
-        self.gaze_calib = calib
         self.gaze_cursor.reset()
+        if not fitted:
+            text = "калибровка взгляда не удалась: мало кадров — нажмите B ещё раз"
+            self._events_log.appendleft(text)
+            log.warning("%s", text)
+            return text
+        metrics = pursuit_metrics(data.get("pursuit") or [])
+        calib.latency_ms = metrics["latency_ms"]
+        calib.responsiveness = metrics["responsiveness"]
+        calib.pursuit_frames = int(metrics["frames"])
+        calib.face_scale = float(getattr(self._metrics, "interocular", 0.0) or 0.0)
+        head_ok = calib.fit_head(head_samples)
+        self.gaze_calib = calib
         self.cfg.face.gaze_calibration = calib.to_dict()
         self.cfg.face.gaze_absolute = True
         worst, mean = calib.error()
-        text = (f"калибровка взгляда готова: {len(calib.points)} точек, "
+        tune = self._autotune_gaze(calib)
+        text = (f"калибровка взгляда готова: {len(calib.points)} проб, "
                 f"{calib.quality_text()}, "
+                f"задержка взгляда {calib.latency_ms:.0f} мс, "
                 f"{calib.head_gain_text() if head_ok else 'поворот головы: без компенсации'}")
+        if tune:
+            text += f", {tune}"
         self._events_log.appendleft(text)
-        log.info("Калибровка взгляда: %d точек, %s", len(calib.points), calib.quality_text())
+        log.info("Калибровка взгляда: %d проб, %s, задержка %.0f мс",
+                 len(calib.points), calib.quality_text(), calib.latency_ms)
         if worst > 0.08:
-            # пять точек разошлись: скорее всего смотрели мимо или веко мешало
             warn = ("калибровка неточная (промах до "
-                    f"{worst * 100:.0f}% экрана) — повторите её, глядя точно в уголок")
+                    f"{worst * 100:.0f}% экрана) — повторите, ведя точку глазами")
             self._events_log.appendleft(warn)
             self.state.backend_note = warn[:64]
             log.warning("%s", warn)
         return text
 
+    def _autotune_gaze(self, calib: GazeCalibration) -> str:
+        """Подобрать сглаживание и мёртвую зону по данным самой калибровки.
+
+        Идея из настроек Eye Tracking у Apple: «smoothing» — больше плавности
+        или больше отзывчивости. Величину выбираем не на глаз, а по двум
+        измерениям: насколько зрачок отстаёт от цели (задержка) и насколько он
+        шумит (средний промах).
+        """
+        if not bool(getattr(self.cfg.face, "gaze_autotune", True)):
+            return ""
+        _worst, mean = calib.error()
+        latency_s = max(0.0, calib.latency_ms) / 1000.0
+        alpha = min(0.90, max(0.35, 0.90 - latency_s * 1.5))
+        deadzone = int(round(min(30.0, max(6.0, 6.0 + mean * 300.0))))
+        self.cfg.face.gaze_cursor_alpha = round(alpha, 2)
+        self.cfg.face.gaze_deadzone_px = deadzone
+        self.gaze_cursor = GazeCursor(deadzone, self.cfg.face.gaze_cursor_alpha)
+        return f"сглаживание {alpha:.2f}, мёртвая зона {deadzone} px"
+
+    def _note_gaze_drift(self, now: float) -> None:
+        """Лицо уехало от камеры — как у Apple, напомнить про перекалибровку."""
+        calib = self.gaze_calib
+        if not calib.ready or calib.face_scale <= 1e-6 or self._metrics is None:
+            return
+        scale = float(getattr(self._metrics, "interocular", 0.0) or 0.0)
+        if scale <= 1e-6:
+            return
+        limit = float(getattr(self.cfg.face, "gaze_recalib_scale", 0.25))
+        if abs(scale / calib.face_scale - 1.0) <= limit:
+            return
+        every = float(getattr(self.cfg.face, "gaze_recalib_cooldown_s", 60.0))
+        if now - self._gaze_drift_at < every:
+            return
+        self._gaze_drift_at = now
+        text = "лицо/камера сместились после калибровки — нажмите B, иначе взгляд врёт на краях"
+        self._events_log.appendleft(text)
+        log.info("%s", text)
+
+    # ------------------------------------------------------------------ #
+    def _tick_gaze_calibration(self, now: float) -> None:
+        """Один кадр мастера калибровки: время, точка, сэмплы."""
+        calib = self._calib
+        if calib is None:
+            return
+        calib["now"] = now
+        if calib.get("phase_since") is None:
+            calib["phase_since"] = now
+        elapsed = max(0.0, now - float(calib["phase_since"]))
+        calib["elapsed"] = elapsed
+        phase = calib.get("phase")
+        if phase == "pursuit":
+            dot = pursuit_point(elapsed, self._pursuit_s())
+            calib["dot"] = dot
+            trail = calib["trail"]
+            trail.append(dot)
+            if len(trail) > 60:
+                del trail[:-60]
+            if elapsed >= self._pursuit_s():
+                self._after_pursuit(now)
+                return
+        elif phase == "head_intro":
+            if elapsed >= float(getattr(self.cfg.face, "gaze_head_intro_s", 8.0)):
+                self._enter_phase("head_count", now)
+                return
+        elif phase == "head_count":
+            if elapsed >= float(getattr(self.cfg.face, "gaze_head_count_s", 3.0)):
+                self._enter_phase("head", now, "калибровка: смотрите в центр и вертите головой")
+                return
+        elif phase == "head":
+            if elapsed >= self._head_phase_s():
+                self._finish_gaze_calibration()
+                self._update_state([], 0.0)
+                return
+        self._collect_gaze_sample()
+
+    def _collect_gaze_sample(self) -> None:
+        """Копим положение зрачка: за точкой, на прицеле или при повороте головы."""
+        if self._calib is None or not self.face_fsm.gaze_valid:
+            return
+        phase = self._calib.get("phase")
+        if phase == "pursuit":
+            dot = self._calib.get("dot") or (0.5, 0.5)
+            self._calib["pursuit"].append(
+                (self._phase_elapsed(), self.face_fsm.gaze_u, self.face_fsm.gaze_v,
+                 dot[0], dot[1])
+            )
+            return
+        if phase == "head":
+            head = self._calib["head"]
+            head.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v,
+                         self.face_fsm.head_yaw, self.face_fsm.head_pitch))
+            if len(head) > 600:
+                del head[:-600]
+            return
+        if phase != "points":
+            return                    # intro/count — ничего не снимаем
+        samples = self._calib["samples"]
+        samples.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v))
+        if len(samples) > 60:
+            del samples[:-60]
     def reset_gaze_calibration(self) -> str:
         self.gaze_calib = GazeCalibration()
         self.gaze_cursor.reset()
@@ -916,35 +1194,12 @@ class AirMouseApp:
         self._events_log.appendleft("калибровка взгляда сброшена")
         return "калибровка взгляда сброшена"
 
-    def _tick_gaze_calibration(self, now: float) -> None:
-        """Один кадр мастера калибровки: копим сэмплы и следим за временем."""
-        if self._calib is None:
-            return
-        if self._calib.get("phase") == "head":
-            if self._calib.get("head_since") is None:
-                self._calib["head_since"] = time.monotonic()
-            elif self._head_phase_left() <= 0.0:
-                self._finish_gaze_calibration()
-                self._update_state([], 0.0)
-                return
-        self._collect_gaze_sample()
-
-    def _collect_gaze_sample(self) -> None:
-        """Копим положения зрачка, пока человек смотрит в очередную точку."""
-        if self._calib is None or not self.face_fsm.gaze_valid:
-            return
-        if self._calib.get("phase") == "head":
-            # фаза «поворот головы»: смотрим в центр, а голова ездит
-            head = self._calib["head"]
-            head.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v,
-                         self.face_fsm.head_yaw, self.face_fsm.head_pitch))
-            if len(head) > 600:
-                del head[:-600]
-            return
-        samples = self._calib["samples"]
-        samples.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v))
-        if len(samples) > 60:
-            del samples[:-60]
+    def reset_gaze_calibration(self) -> str:
+        self.gaze_calib = GazeCalibration()
+        self.gaze_cursor.reset()
+        self.cfg.face.gaze_calibration = {}
+        self._events_log.appendleft("калибровка взгляда сброшена")
+        return "калибровка взгляда сброшена"
 
     def toggle_gaze_pointer(self) -> str:
         """Включить/выключить управление курсором глазами (клавиша G)."""
@@ -954,7 +1209,7 @@ class AirMouseApp:
         self.state.gaze_pointer = on
         hint = ""
         if on and not (self.cfg.face.gaze_absolute and self.gaze_calib.ready):
-            hint = " (B — калибровка взгляда: курсор будет телепортироваться)"
+            hint = " (B — калибровка: без неё курсор телепортируется)"
         self._events_log.appendleft(
             "мышь глазами " + ("вкл" if on else "выкл")
             + ("" if self.face_fsm.gaze_valid else " (зрачков пока не видно)")
@@ -1059,9 +1314,24 @@ class AirMouseApp:
         s.calib_active = self.calibrating
         s.calib_target = self.calibration_target()
         s.calib_text = self.calibration_text()
+        s.calib_pursuit = bool(self._calib and self._calib.get("mode") == "pursuit")
+        s.calib_trail = tuple(self._calib.get("trail") or ()) if self._calib else ()
+        if self.motion_wizard is not None:
+            s.profile_text = self.motion_wizard.title
+            s.profile_hint = self.motion_wizard.hint
+            s.profile_progress = self.motion_wizard.progress
+        else:
+            s.profile_text = ""
+            s.profile_hint = ""
+            s.profile_progress = 0.0
+        if s.calib_pursuit:
+            total = max(self._pursuit_s(), 1e-3)
+            s.calib_progress = min(1.0, self._phase_elapsed() / total)
+        else:
+            s.calib_progress = 0.0
         if self._calib is None:
             s.calib_done = 0
-        elif self._calib.get("phase") == "head":
+        elif self._calib.get("phase") in ("head", "head_intro", "head_count"):
             s.calib_done = len(CALIBRATION_TARGETS)
         else:
             s.calib_done = int(self._calib["index"])
@@ -1197,6 +1467,9 @@ class AirMouseApp:
         Возвращает ``True``, если клавиша что-то сделала.
         """
         if keys.matches(key, "esc") or keys.matches(key, "q"):
+            if self.motion_wizard is not None:
+                self.cancel_motion_profile()
+                return True
             if self.calibrating:
                 self.cancel_gaze_calibration()
                 return True
@@ -1220,6 +1493,15 @@ class AirMouseApp:
             return True
         if self.calibrating and keys.matches(key, "space"):
             self.confirm_gaze_point()
+            return True
+        if keys.matches(key, "n"):
+            if self.motion_wizard is not None:
+                self.cancel_motion_profile()
+            elif not self.calibrating:
+                self.start_motion_profile()
+            return True
+        if self.motion_wizard is not None and keys.matches(key, "space"):
+            self.skip_motion_step()
             return True
         if keys.matches(key, "f"):
             self.toggle_fullscreen()

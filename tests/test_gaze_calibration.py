@@ -96,6 +96,9 @@ def _app(**overrides) -> AirMouseApp:
         for part in parts[:-1]:
             node = getattr(node, part)
         setattr(node, parts[-1], value)
+    if "face.gaze_calib_mode" not in overrides:
+        # эти тесты про запасной режим «девять прицелов»
+        cfg.face.gaze_calib_mode = "points"
     if "face.gaze_head_check_s" not in overrides:
         # в тестах точек вторая фаза (поворот головы) не нужна
         cfg.face.gaze_head_check_s = 0.0
@@ -418,6 +421,16 @@ def test_head_gain_survives_restart():
     assert again.head_gain == pytest.approx(calib.head_gain)
 
 
+def _to_head(app: AirMouseApp) -> float:
+    """Довести мастер от «прочитайте» до фазы «вертите головой»."""
+    assert app._calib["phase"] == "head_intro"
+    app.confirm_gaze_point()                       # «прочитал» → отсчёт
+    assert app._calib["phase"] == "head_count"
+    app._tick_gaze_calibration(float(app._calib["phase_since"] or 0.0) + 3.5)
+    assert app._calib["phase"] == "head"
+    return float(app._calib["phase_since"] or 0.0)
+
+
 def test_wizard_turns_head_after_nine_points():
     app = _app(**{"face.gaze_head_check_s": 6.0})
     app.start_gaze_calibration()
@@ -426,20 +439,22 @@ def test_wizard_turns_head_after_nine_points():
         app.confirm_gaze_point()
         if index < len(CALIBRATION_TARGETS) - 1:
             assert app._calib["phase"] == "points"
-    # точки сняты, но мастер ещё не закончил: вторая фаза — поворот головы
+    # точки сняты, но мастер ещё не закончил: сначала «прочитайте», потом головой
     assert app.calibrating is True
-    assert app._calib["phase"] == "head"
+    assert app._calib["phase"] == "head_intro"
     assert app.calibration_target() == (0.5, 0.5)
+    assert "прочитали" in app.calibration_text().lower()
+
+    head_since = _to_head(app)
     assert "голов" in app.calibration_text().lower()
 
     center = gaze_for(0.5, 0.5)
-    for gx, gy, yaw, pitch in _head_samples(center):
+    for offset, (gx, gy, yaw, pitch) in enumerate(_head_samples(center)):
         app.face_fsm.gaze_u, app.face_fsm.gaze_v = gx, gy
         app.face_fsm.head_yaw, app.face_fsm.head_pitch = yaw, pitch
-        app._tick_gaze_calibration(0.0)
+        app._tick_gaze_calibration(head_since + 0.1 * (offset + 1))
     assert app.calibrating is True            # время ещё не вышло
-    app._calib["head_since"] = time.monotonic() - 100.0
-    app._tick_gaze_calibration(0.0)
+    app._tick_gaze_calibration(head_since + 100.0)
 
     assert app.calibrating is False
     assert app.gaze_calib.ready
@@ -453,6 +468,10 @@ def test_wizard_head_phase_can_be_skipped_with_space():
     for sx, sy in CALIBRATION_TARGETS:
         _look(app, sx, sy)
         app.confirm_gaze_point()
+    assert app._calib["phase"] == "head_intro"
+    app.confirm_gaze_point()                  # пробел = «прочитал, начинай»
+    assert app._calib["phase"] == "head_count"
+    app._tick_gaze_calibration(float(app._calib["phase_since"] or 0.0) + 3.5)
     assert app._calib["phase"] == "head"
     app.confirm_gaze_point()                  # пробел во второй фазе = «готово»
     assert app.calibrating is False
@@ -481,13 +500,13 @@ def test_cursor_stays_put_while_head_turns():
     for sx, sy in CALIBRATION_TARGETS:
         _look(app, sx, sy)
         app.confirm_gaze_point()
+    head_since = _to_head(app)
     center = gaze_for(0.5, 0.5)
-    for gx, gy, yaw, pitch in _head_samples(center):
+    for offset, (gx, gy, yaw, pitch) in enumerate(_head_samples(center)):
         app.face_fsm.gaze_u, app.face_fsm.gaze_v = gx, gy
         app.face_fsm.head_yaw, app.face_fsm.head_pitch = yaw, pitch
-        app._tick_gaze_calibration(0.0)
-    app._calib["head_since"] = time.monotonic() - 100.0
-    app._tick_gaze_calibration(0.0)
+        app._tick_gaze_calibration(head_since + 0.1 * (offset + 1))
+    app._tick_gaze_calibration(head_since + 100.0)
     assert app.calibrating is False
 
     width, height = app.screen_size()

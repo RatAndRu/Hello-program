@@ -117,6 +117,9 @@ def _app(**overrides):
         for part in parts[:-1]:
             node = getattr(node, part)
         setattr(node, parts[-1], value)
+    if "face.gaze_calib_mode" not in overrides:
+        # эти тесты про запасной режим «девять прицелов»
+        cfg.face.gaze_calib_mode = "points"
     if "face.gaze_head_check_s" not in overrides:
         cfg.face.gaze_head_check_s = 0.0     # вторая фаза не нужна
     app = AirMouseApp(cfg, dry_run=True, show_window=False)

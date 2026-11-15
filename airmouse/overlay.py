@@ -150,6 +150,12 @@ class OverlayState:
     calib_target: Optional[Sequence[float]] = None   # куда просим посмотреть
     calib_text: str = ""             # «ВЗГЛЯД: левый верхний угол (1/5)…»
     calib_done: int = 0              # сколько точек калибровки уже снято
+    calib_pursuit: bool = False      # калибровка «веди взгляд за точкой»
+    calib_trail: Sequence[Sequence[float]] = ()   # след красной точки
+    calib_progress: float = 0.0      # сколько времени откалибровано (0..1)
+    profile_text: str = ""           # шаг «профиля движений» (клавиша N)
+    profile_hint: str = ""           # что именно сделать и сколько осталось
+    profile_progress: float = 0.0    # сколько шагов пройдено (0..1)
     calib_debug: str = ""            # «экран 1920×1080 · холст 1920×1080»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
@@ -463,11 +469,25 @@ def render_gaze_calibration(size: Tuple[int, int],
     cv2.rectangle(img, (0, 0), (w - 1, h - 1), (48, 50, 56), 1)
 
     k = max(min(h / 1080.0, w / 1920.0), 0.55)
+    if state.calib_pursuit:
+        # след точки: видно, что она ползёт плавно, и куда она уползла
+        trail = list(state.calib_trail or ())
+        for i, point in enumerate(trail[-60:]):
+            if len(point) < 2:
+                continue
+            px = int(round(float(point[0]) * (w - 1)))
+            py = int(round(float(point[1]) * (h - 1)))
+            fade = (i + 1) / max(len(trail[-60:]), 1)
+            color = (int(40 + 30 * fade), int(40 + 40 * fade), int(120 + 60 * fade))
+            cv2.circle(img, (px, py), max(int(3 * k), 1), color, -1, cv2.LINE_AA)
     if state.calib_target is not None:
         # доля экрана -> пиксель холста: 0 -> 0, 1 -> последний пиксель
         tx = int(round(float(state.calib_target[0]) * (w - 1)))
         ty = int(round(float(state.calib_target[1]) * (h - 1)))
-        _draw_calibration_target(img, tx, ty, k)
+        if state.calib_pursuit:
+            _draw_pursuit_dot(img, tx, ty, k)
+        else:
+            _draw_calibration_target(img, tx, ty, k)
 
     # подсказка сверху по центру
     text = state.calib_text or "смотрите в точку и нажмите ПРОБЕЛ"
@@ -483,7 +503,10 @@ def render_gaze_calibration(size: Tuple[int, int],
     T.draw(img, hint, (w // 2 - hw // 2, by + height + int(20 * k)), hint_size, DIM)
 
     # прогресс и точные размеры — чтобы можно было проверить глазами
-    _draw_calibration_progress(img, state, k)
+    if state.calib_pursuit:
+        _draw_pursuit_progress(img, state, k)
+    else:
+        _draw_calibration_progress(img, state, k)
     debug = state.calib_debug or f"холст {w}×{h}"
     dbg_size = int(11 * k)
     dw, _dh = T.measure(debug, dbg_size)
@@ -522,6 +545,69 @@ def _draw_calibration_target(img: np.ndarray, tx: int, ty: int, k: float) -> Non
         cv2.line(img, (tx + dx * r, ty + dy * r),
                  (tx + dx * int(r * 1.7), ty + dy * int(r * 1.7)),
                  color, max(int(2 * k), 1), cv2.LINE_AA)
+
+
+def _draw_profile_banner(img: np.ndarray, state: OverlayState, k: float) -> None:
+    """Верхняя полоса «профиля движений»: шаг, подсказка, полоса прогресса."""
+    h, w = img.shape[:2]
+    title = state.profile_text
+    hint = state.profile_hint or ""
+    t_size = int(18 * k)
+    h_size = int(13 * k)
+    tw, th = T.measure(title, t_size)
+    hw, hh = T.measure(hint, h_size) if hint else (0, 0)
+    pad = int(20 * k)
+    box_w = min(w - int(24 * k), max(tw, hw) + 2 * pad)
+    bar_h = max(int(7 * k), 3)
+    box_h = th + (hh + int(6 * k) if hint else 0) + bar_h + int(24 * k)
+    x = w // 2 - box_w // 2
+    # внизу по центру: сверху уже живут сводка и панель мимики, а там, где
+    # идёт профиль, важнее не перекрыть лицо и цифры распознавания
+    y = max(int(12 * k), h - box_h - int(34 * k))
+    _panel(img, x, y, box_w, box_h, 0.86)
+    T.draw(img, title, (x + pad, y + int(8 * k)), t_size, ACCENT)
+    if hint:
+        T.draw(img, hint, (x + pad, y + th + int(12 * k)), h_size, FG)
+    bar_y = y + box_h - bar_h - int(8 * k)
+    inner = box_w - 2 * pad
+    cv2.rectangle(img, (x + pad, bar_y), (x + pad + inner, bar_y + bar_h),
+                  (60, 62, 70), -1, cv2.LINE_AA)
+    done = int(inner * min(max(float(state.profile_progress or 0.0), 0.0), 1.0))
+    if done > 0:
+        cv2.rectangle(img, (x + pad, bar_y), (x + pad + done, bar_y + bar_h),
+                      (90, 235, 130), -1, cv2.LINE_AA)
+
+
+def _draw_pursuit_dot(img: np.ndarray, tx: int, ty: int, k: float) -> None:
+    """Красная точка калибровки взгляда: крупная, с ореолом и перекрестьем.
+
+    Крупная и красная — потому что вести взгляд за маленькой серой точкой
+    тяжело, а красный почти не смешивается с интерфейсом (Apple в Eye Tracking
+    рисует точку того же размера, что и прицел мыши).
+    """
+    r = max(int(13 * k), 7)
+    glow = max(int(30 * k), 16)
+    over = img.copy()
+    cv2.circle(over, (tx, ty), glow, (40, 40, 220), -1, cv2.LINE_AA)
+    cv2.addWeighted(over, 0.22, img, 0.78, 0, dst=img)
+    cv2.circle(img, (tx, ty), r, (40, 40, 235), -1, cv2.LINE_AA)
+    cv2.circle(img, (tx, ty), r + max(int(6 * k), 3), (235, 235, 255),
+               max(int(2 * k), 1), cv2.LINE_AA)
+    cv2.circle(img, (tx, ty), max(int(3 * k), 2), (250, 250, 255), -1, cv2.LINE_AA)
+
+
+def _draw_pursuit_progress(img: np.ndarray, state: OverlayState, k: float) -> None:
+    """Полоска времени: сколько ещё вести взгляд за точкой."""
+    h, w = img.shape[:2]
+    bar_w = int(min(w * 0.5, 620 * k))
+    bar_h = max(int(8 * k), 4)
+    x0 = w // 2 - bar_w // 2
+    y0 = h - int(52 * k)
+    cv2.rectangle(img, (x0, y0), (x0 + bar_w, y0 + bar_h), (60, 62, 70), -1, cv2.LINE_AA)
+    done = int(bar_w * min(max(float(state.calib_progress or 0.0), 0.0), 1.0))
+    if done > 0:
+        cv2.rectangle(img, (x0, y0), (x0 + done, y0 + bar_h), (90, 235, 130), -1,
+                      cv2.LINE_AA)
 
 
 def _draw_calibration_progress(img: np.ndarray, state: OverlayState, k: float) -> None:
@@ -653,6 +739,11 @@ def render(
         _draw_gaze_calibration(img, state, k)
         return img
 
+    if state.profile_text:
+        # профиль движений: картинка с камерой остаётся видимой — человеку
+        # нужно видеть, что его жест распознали, а не только читать текст
+        _draw_profile_banner(img, state, k)
+
     # зона, в которой рука управляет курсором
     if not state.head_pointer and not state.paused:
         x0, y0, x1, y1 = state.active_box
@@ -688,7 +779,8 @@ def render(
 
     _draw_status(img, state, k)
     _draw_face_panel(img, state, k)
-    _draw_events(img, state, k)
+    if not state.profile_text:      # журнал не мешает полосе профиля внизу
+        _draw_events(img, state, k)
 
     # прицел: показываем, куда именно попадёт клик
     if state.aiming and state.aim is not None:
