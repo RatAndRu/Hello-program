@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, List
 
+import cv2
 import numpy as np
 
 from .actions import ActionRouter, DryRunBackend
@@ -17,6 +18,7 @@ from .filters import HysteresisGate, OneEuroFilter
 from .gestures import HandFSM, Pose, analyze_hand, classify_pose, synthetic_hand
 from .lipreading import LipReader, TemplateStore, dtw_distance, normalize_sequence
 from .pointer import PointerMapper
+from .settings_ui import DEFAULTS, SettingsPanel
 from .synthetic import synthetic_face
 
 
@@ -103,6 +105,25 @@ def check_debounce() -> Check:
             clicks += ev.kind == "pinch_release"
         t += 0.033
     return Check("одиночный выброс щипка не кликает", clicks == 0, f"кликов: {clicks}")
+
+
+def check_settings_panel() -> Check:
+    """Ползунки настроек реально меняют конфиг и сохраняются в файл."""
+    cfg = AppConfig()
+    panel = SettingsPanel(cfg)
+    panel.open()
+    rows = panel.layout()
+    row = rows[4] if len(rows) > 4 else rows[0]
+    slider = row.slider
+    x0, _y, track_w, _h = row.track
+    panel.on_mouse(cv2.EVENT_LBUTTONDOWN, x0 + track_w - 2, row.rect[1] + 4)
+    moved = abs(slider.get(cfg) - DEFAULTS[slider.key]) > 1e-9
+    before = slider.get(cfg)
+    panel.reset()
+    restored = abs(slider.get(cfg) - DEFAULTS[slider.key]) < 1e-9
+    ok = bool(moved and restored and before is not None)
+    return Check("ползунки настроек меняют конфиг", ok,
+                 f"{slider.label}: {before:.3g} -> заводское {slider.get(cfg):.3g}")
 
 
 def check_head_pointer() -> Check:
@@ -470,6 +491,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_builtin_gestures,
     check_debounce,
     check_head_pointer,
+    check_settings_panel,
     check_rotation,
     check_click_fsm,
     check_drag_fsm,

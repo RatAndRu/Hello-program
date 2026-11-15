@@ -7,7 +7,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ from .lipreading import LipReader, TemplateStore, mouth_features
 from .overlay import OverlayState, render
 from .landmarks import WRIST
 from .pointer import PointerMapper
+from .settings_ui import SettingsPanel
 from .tracker import FrameResult, create_tracker
 
 log = logging.getLogger("airmouse")
@@ -132,6 +133,10 @@ class AirMouseApp:
         self._lit = 0.0
         self._last_scroll_log = 0.0
         self.click_fsm = HandFSM(cfg.hand)
+        self.settings: Optional[SettingsPanel] = None
+        self._mouse_bound = False
+        self._frame_size: Tuple[int, int] = (960, 540)
+        self._paused_for_settings = False
         self._window_name = "AirMouse"
 
     # ------------------------------------------------------------------ #
@@ -209,6 +214,10 @@ class AirMouseApp:
     # ------------------------------------------------------------------ #
     def process_frame(self, frame: np.ndarray, now: float, ts_ms: int) -> List[Event]:
         events: List[Event] = []
+        # пока открыта панель настроек, мышь держим на паузе принудительно:
+        # случайный жест не должен «разбудить» курсор под рукой пользователя
+        if self.settings_open():
+            self.router.paused = True
         warmup = now < self._armed_at
 
         if hasattr(self.tracker, "process_events"):
@@ -265,6 +274,12 @@ class AirMouseApp:
             # человек успевает встать перед камерой.
             return events
 
+        if self.settings_open():
+            # Панель настроек: распознавание идёт (видно живые цифры), но ни один
+            # жест ничего не нажимает — иначе ладонь «снимала» бы паузу прямо
+            # в момент перетаскивания ползунка.
+            return events
+
         for ev in events:
             before = len(self.router.log)
             try:
@@ -297,6 +312,92 @@ class AirMouseApp:
         return events
 
     # ------------------------------------------------------------------ #
+    def _bind_mouse(self) -> None:
+        """Навесить обработчик мыши на окно предпросмотра (один раз)."""
+        if self._mouse_bound:
+            return
+        try:
+            cv2.setMouseCallback(self._window_name,
+                                 lambda event, x, y, flags, param: self._on_mouse(event, x, y))
+            self._mouse_bound = True
+        except Exception as exc:
+            log.warning("Не удалось включить мышь для настроек: %s", exc)
+
+    def _on_mouse(self, event: int, x: int, y: int) -> None:
+        if not self.settings_open():
+            return
+        size = self._frame_size
+        action = self.settings.on_mouse(event, x, y, size)
+        if action in ("save", "close"):
+            self._close_settings()
+        elif action in ("change", "reset"):
+            self._apply_settings_live()
+
+    def _apply_settings_live(self) -> None:
+        """Применить изменённые настройки к уже работающим узлам.
+
+        Все автоматы держат ссылку на тот же объект конфигурации, поэтому правки
+        видны сразу; здесь досинхронизируем то, что копируется в состояние окна.
+        """
+        self.pointer.cfg = self.cfg.pointer
+        self.state.pinch_threshold = self.cfg.hand.pinch_ratio
+
+    def settings_open(self) -> bool:
+        return self.settings is not None and self.settings.is_open
+
+    def toggle_settings(self) -> bool:
+        """Открыть/закрыть окно настроек с ползунками (клавиша C).
+
+        Пока окно открыто, управление мышью на паузе: иначе курсор убегал бы
+        из-под руки прямо во время перетаскивания ползунка.
+        """
+        if self.settings_open():
+            self._close_settings()
+            return False
+        if not self.show_window:
+            log.info("Настройки открываются только с окном: уберите --no-window")
+            return False
+        if self.settings is None:
+            self.settings = SettingsPanel(self.cfg)
+        if not self.settings.open():
+            return False
+        self._bind_mouse()
+        self._paused_for_settings = self.router.paused
+        self.router.paused = True
+        self._events_log.append(
+            f"{time.strftime('%H:%M:%S')}  настройки: управление мышью на паузе"
+        )
+        return True
+
+    def _close_settings(self) -> None:
+        if self.settings is None:
+            return
+        was_dirty = self.settings.dirty
+        self.settings.close(save=was_dirty)
+        saved = was_dirty or self.settings.saved
+        self._events_log.append(
+            f"{time.strftime('%H:%M:%S')}  "
+            + ("настройки сохранены" if saved else "настройки закрыты без сохранения")
+        )
+        self.router.paused = self._paused_for_settings
+        self._paused_for_settings = False
+
+    def _settings_live(self) -> str:
+        """Строка «сейчас: …» — чтобы видеть эффект ползунков на живых цифрах."""
+        parts: List[str] = []
+        feats = getattr(self.hand_fsm, "last_features", None)
+        if feats is not None and getattr(feats, "valid", False):
+            parts.append(f"щипок {feats.pinch:.2f}")
+        if self.state.pose and self.state.pose != "—":
+            parts.append(f"жест: {self.state.pose}")
+        pos = self.pointer.position
+        if pos is not None:
+            parts.append(f"курсор {int(pos[0])},{int(pos[1])}")
+        if self.router.head_pointer:
+            parts.append(f"голова {self.face_fsm.rel_yaw:+.0f}°/ {self.face_fsm.rel_pitch:+.0f}°")
+        parts.append(f"{self.state.fps:.0f} кадр/с")
+        return "сейчас: " + "   ".join(parts)
+
     def _head_pointer_events(self, now: float) -> List[Event]:
         """«Мышь головой»: курсор двигается наклоном головы.
 
@@ -355,6 +456,7 @@ class AirMouseApp:
         split = getattr(self.cfg.hand, "roles", "single") == "split"
         s.split_roles = split and len(self._hands) >= 2
         s.roles_text = ("роли: 1 — курсор, 2 — клики" if s.split_roles else "")
+        s.settings_open = self.settings_open()
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
@@ -438,6 +540,11 @@ class AirMouseApp:
                 else:
                     canvas = None
 
+                if canvas is not None:
+                    self._frame_size = (canvas.shape[1], canvas.shape[0])
+                if canvas is not None and self.settings_open():
+                    canvas = self.settings.draw(canvas, live=self._settings_live())
+
                 if self.output is not None:
                     cv2.imwrite(str(self.output), canvas)
 
@@ -453,7 +560,18 @@ class AirMouseApp:
                         log.info("Окно закрыто крестиком — выходим")
                         self.running = False
                         break
-                    if key in (27, ord("q"), ord("й")):
+                    handled = False
+                    if self.settings_open():
+                        action = self.settings.on_key(key)
+                        handled = action is not None
+                        if action in ("save", "close"):
+                            self._close_settings()
+                            self._update_state([], fps)
+                        elif action in ("reset", "change"):
+                            self._apply_settings_live()
+                    if handled:
+                        pass
+                    elif key in (27, ord("q"), ord("й")):
                         self.running = False
                     elif key in (ord("p"), ord("з")):
                         self.router.paused = not self.router.paused
@@ -461,6 +579,8 @@ class AirMouseApp:
                         self.router.head_pointer = not self.router.head_pointer
                     elif key in (ord("m"), ord("M"), ord("ь")):
                         self.switch_backend()
+                    elif key in (ord("c"), ord("C"), ord("с"), ord("С")):
+                        self.toggle_settings()
                     elif key in (ord("i"), ord("I"), ord("ш"), ord("?")):
                         self.state.show_help = not self.state.show_help
                     elif key == 9:  # Tab — тот же переключатель, что и «I»

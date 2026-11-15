@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.5.0",
+        version="0.6.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
     )
@@ -89,7 +89,19 @@ def main() -> int:
     save(overlay.render(background(), st, hands=[left, right], face=None, primary=0),
          "overlay-two-hands.png")
 
-    # 5. Справка по жестам
+    # 5. Настройки с ползунками (клавиша C)
+    from airmouse.settings_ui import SettingsPanel
+
+    panel = SettingsPanel(AppConfig())
+    panel.open()
+    panel.goto_page(0)
+    rows = panel.layout()
+    panel._apply(rows[4], rows[4].track[0] + int(rows[4].track[2] * 0.42))
+    shot = panel.draw(np.zeros((H, W, 3), dtype=np.uint8),
+                      live="сейчас: щипок 0.42   жест: указательный   29 кадр/с")
+    save(shot, "overlay-settings.png")
+
+    # 6. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)
     save(overlay.render(background(), st, hands=[palm], face=face), "overlay-help.png")
     return 0

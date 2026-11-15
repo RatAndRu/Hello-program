@@ -93,6 +93,7 @@ HELP_KEYS = (
     ("P", "пауза (действия не выполняются)"),
     ("H", "мышь головой вкл/выкл"),
     ("M", "сменить движок (нейросеть ↔ классический CV)"),
+    ("C", "настройки: ползунки калибровки"),
     ("I / Tab", "эта справка"),
     ("пробел", "статистика в журнал"),
 )
@@ -132,9 +133,10 @@ class OverlayState:
     two_hand_hint: str = ""          # подсказка для жестов двумя руками
     split_roles: bool = False        # «одна рука — курсор, вторая — нажатия»
     roles_text: str = ""             # кто чем занят (режим hand.roles=split)
+    settings_open: bool = False      # окно настроек с ползунками открыто
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход   P пауза   H мышь головой   M движок   I справка"
+    hints: str = "Q выход   P пауза   H мышь головой   C настройки   M движок   I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -324,7 +326,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
              (actions, size_small))
     text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
     panel_w = text_w + int(24 * k)
-    panel_h = int((134 if state.roles_text else 104) * k)
+    n_extra = int(bool(state.roles_text)) + int(state.settings_open)
+    panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
     title = "AirMouse"
@@ -337,8 +340,13 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     T.draw(img, fps_line, (x + 12, y + 56), size_small, color)
     T.draw(img, pose_line, (x + 12, y + 76), size_small, FG)
     T.draw(img, actions, (x + 12, y + 96), size_small, acolor)
+    extras = []
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
-        T.draw(img, state.roles_text, (x + 12, y + 116), size_small, ACCENT)
+        extras.append((state.roles_text, ACCENT))
+    if state.settings_open:
+        extras.append(("настройки: ползунки, мышь на паузе", WARN))
+    for i, (text, color) in enumerate(extras):
+        T.draw(img, text, (x + 12, y + 116 + i * 20), size_small, color)
 
     if state.backend_note:
         note_y = y + panel_h + int(8 * k)
@@ -386,7 +394,6 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     title_size = int(22 * k)
     body = int(14 * k)
     row = int(21 * k)
-    head_gap = int(26 * k)
     T.draw(img, "Что умеет AirMouse", (pad, pad), title_size, FG)
 
     left_x = pad
@@ -497,7 +504,8 @@ def render(
                int(13 * k), (0, 255, 255), alpha=0.5)
 
     if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
-        hint_y = int((12 + (134 if state.roles_text else 104) + 8) * k)
+        n_extra = int(bool(state.roles_text)) + int(state.settings_open)
+        hint_y = int((12 + 104 + 30 * n_extra + 8) * k)
         _label(img, state.two_hand_hint, (int(12 * k), hint_y),
                int(14 * k), ACCENT, alpha=0.55)
 
