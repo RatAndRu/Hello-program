@@ -167,6 +167,10 @@ class FaceFSM:
         self.cooldown = Cooldown(0.5)
         self.smile_hold = HoldTimer(cfg.smile_hold_s)
         self.brow_hold = HoldTimer(cfg.brow_hold_s)
+        # улыбка и брови — «медленные» жесты, им нужен свой кулдаун, иначе
+        # одно и то же выражение лица стреляет очередью событий
+        self.smile_cooldown = Cooldown(cfg.smile_cooldown_s)
+        self.brow_cooldown = Cooldown(cfg.brow_cooldown_s)
         self._last_blink_t: Optional[float] = None
         self._closed_since: Optional[float] = None
         self._both_closed_seen = False
@@ -187,6 +191,8 @@ class FaceFSM:
         self.right = _BlinkTracker(self.cfg.ear_blink, self.cfg.ear_open)
         self.smile_hold.reset()
         self.brow_hold.reset()
+        self.smile_cooldown.reset()
+        self.brow_cooldown.reset()
         self.cooldown.reset()
         self._last_blink_t = None
         self._closed_since = None
@@ -258,15 +264,16 @@ class FaceFSM:
             self._both_closed_seen = False
 
         # --- улыбка ---------------------------------------------------- #
-        smile_now = self.smile_score > self.cfg.smile_delta
+        smile_now = self.smile_score > self.cfg.smile_delta * 1.2
         if self.smile_hold.update(smile_now, now):
-            if self.cooldown.try_fire("smile", now):
+            if self.smile_cooldown.try_fire("smile", now):
                 events.append(Event("smile_hold", label="улыбка"))
 
         # --- брови ------------------------------------------------------ #
-        brow_now = self.brow_score > self.cfg.brow_delta
+        # брови поднимаются и от разговора, поэтому порог выше и держать дольше
+        brow_now = self.brow_score > self.cfg.brow_delta * 1.5
         if self.brow_hold.update(brow_now, now):
-            if self.cooldown.try_fire("brow", now):
+            if self.brow_cooldown.try_fire("brow", now):
                 events.append(Event("brow_hold", label="брови"))
 
         return events

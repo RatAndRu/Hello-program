@@ -20,6 +20,7 @@ from .face import FaceFSM, FaceMetrics, measure_face
 from .gestures import Event, HandFSM, POSE_TITLES_RU, analyze_hand, classify_pose
 from .lipreading import LipReader, TemplateStore, mouth_features
 from .overlay import OverlayState, render
+from .landmarks import WRIST
 from .pointer import PointerMapper
 from .tracker import FrameResult, create_tracker
 
@@ -31,6 +32,9 @@ BACKEND_TITLES = {
     "classical": "классический CV (без ИИ)",
     "none": "без распознавания",
 }
+
+# События мимики, которые нельзя выпускать во время перетаскивания/щипка.
+FACE_SUPPRESSED = {"open_palm_hold", "smile_hold", "brow_hold", "eyes_closed_hold"}
 
 HAND_EVENTS_RU = {
     "pinch_release": "клик",
@@ -104,6 +108,8 @@ class AirMouseApp:
         self._metrics: Optional[FaceMetrics] = None
         self._face = None
         self._hands: List = []
+        self._primary_index = 0
+        self._primary_wrist: Optional[np.ndarray] = None
         self._shape = None
         self._lit = 0.0
         self._last_scroll_log = 0.0
@@ -194,12 +200,22 @@ class AirMouseApp:
             events = self._translate(events, now)
         else:
             res = self.tracker.process(frame, ts_ms)
-            self._hands = res.hands
+            hands = list(res.hands)
+            if self.cfg.hand.second_hand == "ignore" and len(hands) > 1:
+                hands = hands[:1]
+            self._hands = hands
             self._face = res.face
             self._shape = None
-            hand = res.primary_hand
+            index = self._pick_primary(hands)
+            self._primary_index = index or 0
+            hand = hands[index] if index is not None else None
             events = self._translate(self.hand_fsm.update(hand, now), now)
-            events += self._handle_face(res.face, now)
+            face_events = self._handle_face(res.face, now)
+            # Пока рука тащит объект или держит щипок, мимика не должна
+            # вмешиваться: иначе улыбка/ладонь «отпускают» кнопку мыши.
+            if self.hand_fsm.dragging or self.hand_fsm.pinching:
+                face_events = [e for e in face_events if e.kind not in FACE_SUPPRESSED]
+            events += face_events
             events += self._handle_lip(res.face, now)
             if self.router.head_pointer and self._metrics is not None:
                 dt = max(now - self._last_now, 1e-3) if self._last_now else 0.016
@@ -282,6 +298,7 @@ class AirMouseApp:
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
+        s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
         if self._hands:
             feats = analyze_hand(self._hands[0], self.cfg.hand.pointer_source)
@@ -355,6 +372,7 @@ class AirMouseApp:
                     canvas = render(
                         frame, self.state, self._hands, self._face,
                         shape=self._shape, metrics=self._metrics,
+                        primary=self._primary_index,
                     )
                 else:
                     canvas = None
@@ -395,6 +413,32 @@ class AirMouseApp:
         finally:
             self.shutdown()
         return exit_code
+
+    # ------------------------------------------------------------------ #
+    def _pick_primary(self, hands: List) -> Optional[int]:
+        """Какая рука «главная»: та же, что и в прошлом кадре.
+
+        Без этого при двух руках в кадре они перехватывали управление друг у
+        друга (курсор прыгал, жесты путались). Главная рука выбирается по
+        близости запястья к предыдущему положению, а вторая только рисуется.
+        """
+        if not hands:
+            self._primary_wrist = None
+            return None
+        index = 0
+        if self._primary_wrist is not None:
+            dists = [
+                float(np.linalg.norm(h.points[WRIST, :2] - self._primary_wrist))
+                for h in hands
+            ]
+            best = int(np.argmin(dists))
+            if dists[best] < 0.35:  # рука всё ещё там же
+                index = best
+        else:
+            # впервые: главной считаем самую крупную (ближайшую к камере) руку
+            index = int(np.argmax([float(h.palm_size) for h in hands]))
+        self._primary_wrist = np.array(hands[index].points[WRIST, :2], dtype=np.float64)
+        return index
 
     # ------------------------------------------------------------------ #
     def _window_closed(self) -> bool:

@@ -211,6 +211,9 @@ class HandFSM:
         self.pose_gate = StabilityGate(cfg.pose_stable_frames)
         self.cooldown = Cooldown(cfg.click_cooldown_s)
         self.open_palm_hold = HoldTimer(cfg.open_palm_hold_s)
+        # отдельный «замок» на паузу: случайно мигнувшая ладонь не должна
+        # переключать режим чаще, чем раз в pause_cooldown_s
+        self.pause_cooldown = Cooldown(getattr(cfg, "pause_cooldown_s", 2.5))
         self._pinching = False
         self._pinch_since = 0.0
         self._dragging = False
@@ -324,11 +327,20 @@ class HandFSM:
             self._scroll_accum = 0.0
 
         # ---------------- раскрытая ладонь: пауза ------------------------- #
-        # Пауза срабатывает только на НЕПОДВИЖНОЙ ладони: если человек ведёт
-        # курсор, рука двигается и жест паузы не мешает работе.
+        # Три условия разом, иначе пауза срабатывала от любого движения:
+        # ладонь открыта и «устоялась», рука почти не двигается, ладонь
+        # достаточно крупная в кадре (человек не махнул рукой вдалеке).
         still = f.fast_motion < self.cfg.pause_max_motion
-        fired = self.open_palm_hold.update(pose == Pose.OPEN_PALM and still, now)
-        if fired and self.cooldown.try_fire("open_palm", now):
+        near = float(hand.palm_size) >= getattr(self.cfg, "pause_min_palm", 0.0)
+        open_and_settled = (
+            pose == Pose.OPEN_PALM
+            and stable == Pose.OPEN_PALM.value
+            and still
+            and near
+            and self.pause_cooldown.ready("open_palm", now)   # не «тратим» жест впустую
+        )
+        fired = self.open_palm_hold.update(open_and_settled, now)
+        if fired and self.pause_cooldown.try_fire("open_palm", now):
             events.append(Event("open_palm_hold", label="ладонь"))
         if pose != Pose.OPEN_PALM:
             self.open_palm_hold.reset()

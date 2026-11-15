@@ -106,9 +106,10 @@ def test_double_blink_clicks():
 
 
 def test_open_palm_pauses_and_resumes():
-    frames = [(synthetic_hand(), None)] * 40
-    frames += [(None, None)] * 6
-    frames += [(synthetic_hand(), None)] * 40
+    # держим ладонь дольше open_palm_hold_s и пережидаем pause_cooldown_s
+    frames = [(synthetic_hand(), None)] * 60
+    frames += [(None, None)] * 8
+    frames += [(synthetic_hand(), None)] * 130
     app = make_app(frames)
     now = 400.0
     for _ in range(len(frames)):

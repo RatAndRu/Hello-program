@@ -75,9 +75,9 @@ HELP_GESTURES = (
     ("щипок ср.", "большой + средний палец", "правый клик"),
     ("большой палец", "кулак с поднятым большим", "двойной клик"),
     ("кулак", "сдвиг кулака влево/вправо/вверх/вниз", "прокрутка"),
-    ("ладонь", "открытая ладонь, подержать 1 с", "пауза"),
-    ("улыбка", "улыбнуться и держать 0.5 с", "пауза"),
-    ("брови", "поднять брови и держать 0.5 с", "мышь головой"),
+    ("ладонь", "открытая ладонь неподвижно 1.3 с", "пауза"),
+    ("улыбка", "улыбнуться и держать 0.65 с", "только индикатор"),
+    ("брови", "поднять брови и держать 0.85 с", "только индикатор"),
     ("моргание", "двойное моргание", "левый клик"),
     ("подмигивание", "один глаз", "правый клик"),
 )
@@ -113,6 +113,7 @@ class OverlayState:
     expression: str = ""             # «улыбка 78%», «глаза закрыты» …
     lip_word: str = ""
     last_event: str = ""
+    hand_count: int = 0              # сколько рук видит нейросеть
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
     hints: str = "Q выход   P пауза   H мышь головой   M движок   I справка"
@@ -292,6 +293,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     backend_line = f"движок: {state.backend or '—'}"
     fps_line = f"{state.fps:4.1f} кадр/с   {status}"
     pose_line = f"жест: {state.pose}"
+    if state.hand_count > 1:
+        pose_line += f"   (рук в кадре: {state.hand_count})"
     if state.dry_run:
         actions, acolor = "действия: ВЫКЛ (предпросмотр)", WARN
     elif state.actions_on:
@@ -377,7 +380,9 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
         T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
         y += int(22 * k)
 
-    y += int(10 * k)
+    T.draw(img, "улыбка и брови только показываются в окне; действия по ним",
+           (pad, y + int(2 * k)), int(12 * k), DIM)
+    y += int(26 * k)
     T.draw(img, "Клавиши:", (pad, y), body, ACCENT)
     y += int(24 * k)
     for key, action in HELP_KEYS:
@@ -397,6 +402,7 @@ def render(
     face: Optional[Face] = None,
     shape=None,
     metrics=None,
+    primary: int = 0,
 ) -> np.ndarray:
     img = frame.copy()
     h, w = img.shape[:2]
@@ -413,9 +419,18 @@ def render(
         _label(img, zone_text, (p2[0] - zw - int(8 * k), p1[1] + int(6 * k)),
                int(12 * k), DIM, alpha=0.4)
 
-    for hand in hands or []:
-        draw_hand_ar(img, hand, dim=state.paused, show_names=state.show_names,
+    for i, hand in enumerate(hands or []):
+        secondary = i != primary
+        draw_hand_ar(img, hand, dim=state.paused or secondary,
+                     show_names=state.show_names and not secondary,
                      pinch_threshold=state.pinch_threshold)
+        if secondary:  # вторая рука — только для красоты, она не управляет
+            pts = hand.to_pixels(w, h)
+            anchor = pts[MIDDLE_MCP].astype(int)
+            text = "вторая рука (не управляет)"
+            width, height = T.measure(text, 12)
+            _label(img, text, (int(anchor[0] - width // 2), int(anchor[1] - height - 16)),
+                   12, DIM, alpha=0.5)
     if face is not None:
         draw_face_ar(img, face, state.expression)
     if shape is not None:

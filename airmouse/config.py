@@ -112,7 +112,8 @@ class CameraConfig:
 @dataclass
 class HandConfig:
     enabled: bool = True
-    max_hands: int = 1
+    max_hands: int = 2                 # распознаём обе руки в кадре (AR-отрисовка)
+    second_hand: str = "draw"          # draw | control | ignore — роль второй руки
     min_detection_confidence: float = 0.6
     min_tracking_confidence: float = 0.6
     pose_stable_frames: int = 3        # сколько кадров жест должен держаться
@@ -120,8 +121,10 @@ class HandConfig:
     pinch_release_ratio: float = 0.42  # и отпускается (гистерезис)
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
-    open_palm_hold_s: float = 1.00     # пауза по раскрытой ладони
-    pause_max_motion: float = 0.010    # ладонь должна почти стоять (доли кадра/кадр)
+    open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
+    pause_max_motion: float = 0.006    # ладонь должна почти стоять (доли кадра/кадр)
+    pause_cooldown_s: float = 2.50     # не чаще одной паузы за это время
+    pause_min_palm: float = 0.055      # ладонь должна быть достаточно крупной в кадре
     fist_scroll_gain: float = 22.0     # «тиков» прокрутки на единицу смещения
     fist_scroll_deadzone: float = 0.006
     pointer_source: str = "auto"       # auto | index_tip | palm
@@ -137,11 +140,11 @@ class FaceConfig:
     blink_max_s: float = 0.45
     double_blink_window_s: float = 0.90
     smile_delta: float = 0.055         # прирост ширины улыбки к нейтрали
-    smile_hold_s: float = 0.45
-    smile_cooldown_s: float = 2.0
+    smile_hold_s: float = 0.65
+    smile_cooldown_s: float = 3.0
     brow_delta: float = 0.045          # подъём бровей к нейтрали
-    brow_hold_s: float = 0.50
-    brow_cooldown_s: float = 2.0
+    brow_hold_s: float = 0.85
+    brow_cooldown_s: float = 5.0
     mouth_open_ratio: float = 0.55
     head_pointer_gain_x: float = 9.0   # скорость мыши от поворота головы
     head_pointer_gain_y: float = 7.0
@@ -176,13 +179,15 @@ class LipConfig:
 
 @dataclass
 class ActionConfig:
+    # Мимика по умолчанию только показывается в окне: улыбка и брови часто
+    # срабатывают случайно (разговор, гримасы) и раньше сами включали паузу и
+    # «мышь головой». Нужно действие по мимике — допишите строку, например:
+    #   python -m airmouse config set actions.mapping.smile_hold=toggle_pause
     mapping: Dict[str, str] = field(default_factory=lambda: {
         "pinch_release": "left_click",
         "middle_pinch_release": "right_click",
         "thumb_up": "double_click",
         "open_palm_hold": "toggle_pause",
-        "smile_hold": "toggle_pause",
-        "brow_hold": "toggle_head_pointer",
         "double_blink": "left_click",
         "wink_left": "right_click",
         "wink_right": "right_click",

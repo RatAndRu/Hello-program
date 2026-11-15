@@ -155,10 +155,12 @@ def check_scroll_fsm() -> Check:
 def check_pause_fsm() -> Check:
     cfg = HandConfig()
     fsm = HandFSM(cfg)
-    frames = [synthetic_hand() for _ in range(40)]  # ~1.3 c раскрытой ладони
+    # держим ладонь дольше, чем требуется (open_palm_hold_s = 1.3 с)
+    frames = [synthetic_hand() for _ in range(int(cfg.open_palm_hold_s * 30) + 25)]
     events, _ = _play(fsm, frames)
     fired = [e for e in events if e.kind == "open_palm_hold"]
-    return Check("ладонь 1 с -> пауза", len(fired) == 1, f"срабатываний: {len(fired)}")
+    return Check(f"ладонь {cfg.open_palm_hold_s:.1f} с -> пауза", len(fired) == 1,
+                 f"срабатываний: {len(fired)}")
 
 
 def check_face_blink() -> Check:
@@ -203,11 +205,13 @@ def check_face_brow() -> Check:
         fsm.update(measure_face(synthetic_face()), t)
         t += 1 / 25.0
     events = []
-    for _ in range(30):
-        events.extend(fsm.update(measure_face(synthetic_face(brow=0.035)), t))
+    # порог бровей поднят (brow_delta * 1.5) — поднимаем заметно и держим дольше
+    for _ in range(int(cfg.brow_hold_s * 25) + 25):
+        events.extend(fsm.update(measure_face(synthetic_face(brow=0.09)), t))
         t += 1 / 25.0
     fired = [e for e in events if e.kind == "brow_hold"]
-    return Check("брови 0.5 с", len(fired) == 1, f"brow_score={fsm.brow_score:.3f}")
+    return Check(f"брови {cfg.brow_hold_s:.1f} с", len(fired) == 1,
+                 f"brow_score={fsm.brow_score:.3f}")
 
 
 def check_face_wink() -> Check:
