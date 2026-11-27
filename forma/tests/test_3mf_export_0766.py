@@ -238,11 +238,21 @@ class ThreeMFExportTests(unittest.TestCase):
         self.assertEqual(len(full.decompose()), 1)
         self.assertLess(abs((original - full).volume()), 0.01)
         self.assertLess(abs((full - original).volume()), 0.01)
+        # Leave at least 1.2 mm around each pocket in the XY silhouette; also
+        # leave a gap between pockets. This is geometry, not a print guarantee.
+        safe_outline = original.slice(2.9).offset(-1.2, mf.JoinType.Round, 2.0, 64)
+        expanded_pockets = []
         for insert in solids[1:]:
             bb = insert.manifold.bounding_box()
             self.assertAlmostEqual(bb[2], 1.8, places=5)
             self.assertAlmostEqual(bb[5], 3.0, places=5)
             self.assertGreater(insert.manifold.volume(), 100)
+            section = insert.manifold.slice(2.9)
+            self.assertLess(abs((section - safe_outline).area()), 1e-5)
+            expanded_pockets.append(section.offset(0.6, mf.JoinType.Round, 2.0, 64))
+        for i, a in enumerate(expanded_pockets):
+            for b in expanded_pockets[i + 1:]:
+                self.assertLess(abs((a ^ b).area()), 1e-5)
 
         # Verify the actual, checked-in file as well as a fresh export. This
         # compares geometry rather than ZIP bytes or triangulation order.
@@ -270,6 +280,8 @@ class ThreeMFExportTests(unittest.TestCase):
                 self.assertEqual(len(actual[name].decompose()), 1, name)
                 self.assertLess(abs((actual[name] - source.scene.objects[name].manifold).volume()), 0.01)
                 self.assertLess(abs((source.scene.objects[name].manifold - actual[name]).volume()), 0.01)
+                if name != "основа":
+                    self.assertLess(abs((actual[name].slice(2.9) - safe_outline).area()), 1e-5)
                 all_vertices.append(vertices)
             verts = np.vstack(all_vertices)
             np.testing.assert_allclose(verts.max(axis=0) - verts.min(axis=0),
