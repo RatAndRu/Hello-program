@@ -267,8 +267,9 @@ jobs:
           cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
           cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
           cp docs/export_interop_0763.md release/ЭКСПОРТ_МАТЕРИАЛЫ.md
-          cp docs/clover_3mf_0766.md release/ЭКСПОРТ_3MF_БРЕЛОК.md
-          cp docs/clover_keychain_3mf_top.png release/КЛЕВЕР_ВИД_СВЕРХУ.png
+          # Сохраняем структуру docs/examples, чтобы работали ссылки в инструкции.
+          mkdir -p release/docs
+          cp docs/clover_3mf_0766.md docs/clover_keychain_3mf_top.png docs/x2d_print_audit.md release/docs/
           cp docs/library_research_0764.md release/БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md
           cp docs/spatial_passport_0765.md release/ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md
           mkdir -p release/ЛИЦЕНЗИИ
@@ -294,8 +295,9 @@ jobs:
           examples = Path('release/examples')
           examples.mkdir(exist_ok=True)
           for p in Path('examples').glob('*.forma'):
-              (examples / p.name).write_text(p.read_text(encoding='utf-8'), encoding='utf-8')
+              shutil.copyfile(p, examples / p.name)
           shutil.copyfile('examples/clover_keychain_3mf.3mf', examples / 'clover_keychain_3mf.3mf')
+          shutil.copyfile('examples/x2d_test_cube_20mm.stl', examples / 'x2d_test_cube_20mm.stl')
           projects = root / 'projects'
           projects.mkdir(exist_ok=True)
           for p in Path('benchmarks/drape_six').glob('*.forma'):
@@ -313,6 +315,18 @@ jobs:
               for p in sorted(root.rglob('*')):
                   if p.is_file():
                       zf.write(p, p.relative_to(root))
+          # Проверьте состав и байты до загрузки: ссылки в документах должны
+          # разрешаться внутри ZIP, а файлы совпадать с текущими исходниками.
+          print_assets = ('docs/clover_3mf_0766.md', 'docs/clover_keychain_3mf_top.png',
+                          'docs/x2d_print_audit.md', 'examples/clover_keychain_3mf.forma',
+                          'examples/clover_keychain_3mf.3mf', 'examples/x2d_test_cube_20mm.forma',
+                          'examples/x2d_test_cube_20mm.stl')
+          with zipfile.ZipFile(zip_path) as zf:
+              if zf.testzip() is not None:
+                  raise SystemExit('Полный ZIP повреждён')
+              for asset in print_assets:
+                  if zf.read(asset) != Path(asset).read_bytes():
+                      raise SystemExit(f'Файл {asset} в ZIP отличается от исходника')
           print('ZIP:', zip_path, zip_path.stat().st_size, 'байт')
           exe_path = Path('dist/Forma3D.exe')
           exe_zip = Path(f'Forma3D-{__version__}-exe.zip')
@@ -397,8 +411,15 @@ jobs:
           with zipfile.ZipFile(out / names[1]) as zf:
               if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
                   raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
-              if zf.read('examples/clover_keychain_3mf.3mf') != Path('forma/examples/clover_keychain_3mf.3mf').read_bytes():
-                  raise SystemExit('Готовый 3MF брелока в ZIP отличается от проверенного файла')
+              for asset in ('examples/clover_keychain_3mf.3mf', 'examples/x2d_test_cube_20mm.stl',
+                            'docs/clover_keychain_3mf_top.png'):
+                  if zf.read(asset) != (Path('forma') / asset).read_bytes():
+                      raise SystemExit(f'Файл {asset} в ZIP отличается от проверенного файла')
+              for asset in ('docs/clover_3mf_0766.md', 'docs/x2d_print_audit.md',
+                            'examples/clover_keychain_3mf.forma', 'examples/x2d_test_cube_20mm.forma'):
+                  archived = zf.read(asset).decode('utf-8').replace('\r\n', '\n')
+                  if archived != (Path('forma') / asset).read_text(encoding='utf-8'):
+                      raise SystemExit(f'Текст {asset} в ZIP отличается от исходника')
               for expected in ('ЧИТАЙ_МЕНЯ.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt',
                                'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
                                'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json',
@@ -407,6 +428,7 @@ jobs:
                                'examples/noise_scatter_0764.forma', 'docs/clover_3mf_0766.md',
                                'docs/clover_keychain_3mf_top.png', 'docs/x2d_print_audit.md',
                                'examples/clover_keychain_3mf.forma', 'examples/clover_keychain_3mf.3mf',
+                               'examples/x2d_test_cube_20mm.forma', 'examples/x2d_test_cube_20mm.stl',
                                'ЛИЦЕНЗИИ/FastNoiseLite-MIT.txt', 'ЛИЦЕНЗИИ/PyFastNoiseLite-0.0.7-MIT.txt',
                                'ЛИЦЕНЗИИ/manifest.json', 'ЛИЦЕНЗИИ/vendor/THREE_LICENSE.txt',
                                'ЛИЦЕНЗИИ/vendor/NVIDIA-FXAA-BSD.txt', 'ЛИЦЕНЗИИ/vendor/human_skeleton.LICENSE.txt'):
