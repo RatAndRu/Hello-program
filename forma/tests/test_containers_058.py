@@ -192,7 +192,8 @@ class ReadyProjects058Test(unittest.TestCase):
             "constructive_elements_01": "Конструктивные элементы: 36 терминов",
         }
         catalog = dict((key, title) for title, key in EXAMPLES)
-        self.assertEqual(len(EXAMPLES), 24)
+        self.assertEqual(len(EXAMPLES), 25)
+        self.assertEqual(catalog.get("clover_keychain_3mf"), "Клевер-брелок: цветной 3MF")
         for key, title in expected.items():
             with self.subTest(project=key):
                 self.assertEqual(catalog.get(key), title)

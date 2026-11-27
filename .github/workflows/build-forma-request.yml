@@ -38,7 +38,7 @@ jobs:
       - name: Установить зависимости
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements.txt pytest lib3mf==2.5.0
       - name: Проверить драпировку, опоры и сцены
         run: >-
           python -m pytest -q tests/test_v075.py tests/test_v076.py tests/test_v077.py
@@ -48,7 +48,8 @@ jobs:
         run: >-
           python -m pytest -q tests/test_v0741.py tests/test_v0742.py
           tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
-          tests/test_export_interop_0763.py tests/test_libraries_0764.py tests/test_spatial_passport_0765.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
+          tests/test_export_interop_0763.py tests/test_3mf_export_0766.py tests/test_x2d_print_example.py
+          tests/test_libraries_0764.py tests/test_spatial_passport_0765.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
       - name: Проверить инструменты и редактор
         run: |
           node --check web/js/app.js
@@ -266,6 +267,8 @@ jobs:
           cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
           cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
           cp docs/export_interop_0763.md release/ЭКСПОРТ_МАТЕРИАЛЫ.md
+          cp docs/clover_3mf_0766.md release/ЭКСПОРТ_3MF_БРЕЛОК.md
+          cp docs/clover_keychain_3mf_top.png release/КЛЕВЕР_ВИД_СВЕРХУ.png
           cp docs/library_research_0764.md release/БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md
           cp docs/spatial_passport_0765.md release/ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md
           mkdir -p release/ЛИЦЕНЗИИ
@@ -292,6 +295,7 @@ jobs:
           examples.mkdir(exist_ok=True)
           for p in Path('examples').glob('*.forma'):
               (examples / p.name).write_text(p.read_text(encoding='utf-8'), encoding='utf-8')
+          shutil.copyfile('examples/clover_keychain_3mf.3mf', examples / 'clover_keychain_3mf.3mf')
           projects = root / 'projects'
           projects.mkdir(exist_ok=True)
           for p in Path('benchmarks/drape_six').glob('*.forma'):
@@ -393,12 +397,16 @@ jobs:
           with zipfile.ZipFile(out / names[1]) as zf:
               if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
                   raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
+              if zf.read('examples/clover_keychain_3mf.3mf') != Path('forma/examples/clover_keychain_3mf.3mf').read_bytes():
+                  raise SystemExit('Готовый 3MF брелока в ZIP отличается от проверенного файла')
               for expected in ('ЧИТАЙ_МЕНЯ.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt',
                                'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
                                'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json',
                                'ЭКСПОРТ_МАТЕРИАЛЫ.md', 'БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md',
                                'ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md', 'examples/spatial_passport_0765.forma',
-                               'examples/noise_scatter_0764.forma',
+                               'examples/noise_scatter_0764.forma', 'docs/clover_3mf_0766.md',
+                               'docs/clover_keychain_3mf_top.png', 'docs/x2d_print_audit.md',
+                               'examples/clover_keychain_3mf.forma', 'examples/clover_keychain_3mf.3mf',
                                'ЛИЦЕНЗИИ/FastNoiseLite-MIT.txt', 'ЛИЦЕНЗИИ/PyFastNoiseLite-0.0.7-MIT.txt',
                                'ЛИЦЕНЗИИ/manifest.json', 'ЛИЦЕНЗИИ/vendor/THREE_LICENSE.txt',
                                'ЛИЦЕНЗИИ/vendor/NVIDIA-FXAA-BSD.txt', 'ЛИЦЕНЗИИ/vendor/human_skeleton.LICENSE.txt'):
@@ -430,7 +438,8 @@ jobs:
               raise SystemExit(f'Не найден результат проверки экспорта EXE: {export_paths}')
           export_audit = json.loads(export_paths[0].read_text(encoding='utf-8'))
           if export_audit.get('version') != version or not all(export_audit.get(k) is True for k in
-              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only', 'fastnoise_and_poisson', 'spatial_passport_fast_and_detail', 'embedded_license_bundle')):
+              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only', 'fastnoise_and_poisson', 'spatial_passport_fast_and_detail', 'embedded_license_bundle',
+               '3mf_components_colors_and_topology', '3mf_face_paint', '3mf_keychain_hole_and_inserts')):
               raise SystemExit('Проверка экспорта и новых инструментов через EXE не прошла')
           shutil.copy2(export_paths[0], out / f'Forma3D-{version}-export-exe-check.json')
           for license_name in ('FastNoiseLite-MIT.txt', 'PyFastNoiseLite-0.0.7-MIT.txt'):

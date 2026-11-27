@@ -2123,41 +2123,125 @@ def export_stl(objects) -> bytes:
     return header.ljust(80, b" ") + struct.pack("<I", count) + body
 
 
+def _indexed_3mf_mesh_ok(verts: np.ndarray, faces: np.ndarray) -> bool:
+    """3MF model requires oriented, two-sided edges by vertex *index*."""
+    v = np.asarray(verts, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    if not len(v) or not len(f) or not np.isfinite(v).all():
+        return False
+    if f.min() < 0 or f.max() >= len(v):
+        return False
+    if np.any((f[:, 0] == f[:, 1]) | (f[:, 1] == f[:, 2]) | (f[:, 2] == f[:, 0])):
+        return False
+    tri = v[f]
+    if np.any(np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1) <= 1e-12):
+        return False
+    directed = f[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+    _, inverse, counts = np.unique(np.sort(directed, axis=1), axis=0,
+                                   return_inverse=True, return_counts=True)
+    if np.any(counts != 2):
+        return False
+    signs = np.where(directed[:, 0] < directed[:, 1], 1, -1)
+    return bool(np.all(np.bincount(inverse.reshape(-1), weights=signs) == 0))
+
+
+def _indexed_3mf_arrays(manifold: mf.Manifold, what: str):
+    """Do not export GLB's split-normal seams as 3MF boundary edges.
+
+    The shared export cleanup can perform guarded repairs for damaged meshes,
+    as with STL/GLB. After that, do not split vertices for shading: preserve
+    already valid indices, or merge only exactly equal coordinates if the result
+    has manifold, oriented indexed edges. Never merge different objects here.
+    """
+    verts, faces = _clean_manifold_arrays(manifold)
+    _validate_export_arrays(verts, faces, what)
+    if _indexed_3mf_mesh_ok(verts, faces):
+        return verts, faces
+    unique, inverse = np.unique(verts, axis=0, return_inverse=True)
+    welded_faces = inverse.reshape(-1)[faces]
+    if _indexed_3mf_mesh_ok(unique, welded_faces):
+        return unique, welded_faces
+    raise GeometryError(
+        f"Экспорт 3MF «{what}» остановлен: сетка не замкнута по индексам рёбер.",
+        hint="Проверьте топологию детали; неоднозначные швы не склеиваются автоматически.",
+    )
+
+
 def export_3mf(objects) -> bytes:
-    """3MF (ZIP + XML) — формат для слайсеров и Windows-программ 3D-печати."""
+    """Стандартный цветной 3MF: мм, Z вверх, отдельные детали в сборке.
+
+    Это геометрия и цвета граней, не проект Bambu и не нарезанное задание.
+    Цвет текстурных карт и PBR-параметры печати не представляют.
+    """
     import io
     import zipfile
-    from xml.sax.saxutils import escape
+    from xml.sax.saxutils import escape, quoteattr
 
-    verts_all, faces_all = [], []
-    offset = 0
-    names = []
-    for obj in objects:
-        verts, _normals, faces = _glb_geometry(obj.manifold, what=obj.name)
-        verts_all.append(verts)
-        faces_all.append(faces + offset)
-        offset += len(verts)
-        names.append(escape(getattr(obj, "name", "деталь")))
-    if not verts_all:
+    objects = list(objects)
+    if not objects:
         raise GeometryError("Нечего экспортировать: нет видимых объектов.")
-    v = np.vstack(verts_all).astype(np.float64)
-    f = np.vstack(faces_all).astype(np.int64)
-    # 3MF использует Z-up и миллиметры — переводим из внутренних Y-up координат
-    v = np.stack([v[:, 0], -v[:, 2], v[:, 1]], axis=1)
-    parts = []
-    for tri in f:
-        parts.append(f'<triangle v1="{tri[0]}" v2="{tri[1]}" v3="{tri[2]}"/>')
-    vertex_xml = "".join(
-        f'<vertex x="{x:.4f}" y="{y:.4f}" z="{z:.4f}"/>' for x, y, z in v)
+    palette: list[tuple[int, int, int]] = []
+    palette_ids: dict[tuple[int, int, int], int] = {}
+
+    def color_index(rgb) -> int:
+        key = tuple(int(c) for c in rgb)
+        if key not in palette_ids:
+            palette_ids[key] = len(palette)
+            palette.append(key)
+        return palette_ids[key]
+
+    meshes = []
+    for obj in objects:
+        name = str(getattr(obj, "name", "деталь"))
+        verts, faces = _indexed_3mf_arrays(obj.manifold, name)
+        base = _color_rgb(getattr(obj, "color", None))
+        # Если читатель не поддерживает цвет граней, он возьмёт именно базовый
+        # цвет объекта, а не случайный цвет первого треугольника.
+        base_index = color_index(np.rint(np.clip(base, 0.0, 1.0) * 255.0).astype(np.uint8))
+        colors = region_triangle_colors(getattr(obj, "paint", None), verts, faces,
+                                        brush=getattr(obj, "brush", None), base=base)
+        if colors is None:
+            indices = np.full(len(faces), base_index, dtype=np.int64)
+        else:
+            rgb = np.rint(np.clip(colors, 0.0, 1.0) * 255.0).astype(np.uint8)
+            local, inverse = np.unique(rgb, axis=0, return_inverse=True)
+            local_ids = np.asarray([color_index(color) for color in local], dtype=np.int64)
+            indices = local_ids[inverse.reshape(-1)]
+        meshes.append((name, verts, faces, base_index, indices))
+
+    color_xml = ''.join(f'<m:color color="#{r:02X}{g:02X}{b:02X}FF"/>'
+                        for r, g, b in palette)
+    resources = [f'<m:colorgroup id="1">{color_xml}</m:colorgroup>']
+    object_ids = []
+    for index, (name, verts, faces, base_index, colors) in enumerate(meshes, start=2):
+        object_ids.append(index)
+        vertices = ''.join(f'<vertex x="{float(x)!r}" y="{float(y)!r}" z="{float(z)!r}"/>'
+                           for x, y, z in verts)
+        triangles = ''.join(
+            f'<triangle v1="{a}" v2="{b}" v3="{c}" pid="1" p1="{int(color)}"/>'
+            for (a, b, c), color in zip(faces, colors)
+        )
+        resources.append(f'<object id="{index}" type="model" name={quoteattr(name)} '
+                         f'pid="1" pindex="{base_index}"><mesh><vertices>{vertices}'
+                         f'</vertices><triangles>{triangles}</triangles></mesh></object>')
+    # Сохраняем взаимное положение деталей: слайсеру не нужно опускать каждую
+    # цветную вставку отдельно на стол. Детали остаются отдельными ресурсами.
+    if len(object_ids) > 1:
+        assembly_id = len(object_ids) + 2
+        components = ''.join(f'<component objectid="{i}"/>' for i in object_ids)
+        resources.append(f'<object id="{assembly_id}" type="model" name="Forma 3D">'
+                         f'<components>{components}</components></object>')
+        build_id = assembly_id
+    else:
+        build_id = object_ids[0]
     model = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="ru-RU" '
-        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
-        f'<metadata name="Title">{names[0] if names else "Форма 3D"}</metadata>\n'
-        '<resources><object id="1" type="model"><mesh><vertices>'
-        + vertex_xml
-        + '</vertices><triangles>' + "".join(parts) + '</triangles></mesh></object></resources>\n'
-        '<build><item objectid="1"/></build></model>\n')
+        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+        'xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02">\n'
+        f'<metadata name="Title">{escape(meshes[0][0])}</metadata>\n'
+        '<resources>' + ''.join(resources) + '</resources>\n'
+        f'<build><item objectid="{build_id}"/></build></model>\n')
     content_types = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'

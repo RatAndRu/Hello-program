@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import io
 import json
 import os
@@ -16,7 +17,9 @@ import tempfile
 import time
 import zipfile
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree as ET
 
+import manifold3d as mf
 import numpy as np
 import trimesh
 
@@ -29,6 +32,43 @@ from forma.version import __version__
 def extents(data):
     scene = trimesh.load(io.BytesIO(data), file_type='glb', force='scene', process=False)
     return np.asarray(scene.bounds[1] - scene.bounds[0])
+
+
+def parse_3mf(data):
+    """Inspect the file produced by the running app, without welding its edges."""
+    ns = {'c': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02',
+          'm': 'http://schemas.microsoft.com/3dmanufacturing/material/2015/02'}
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        if zf.testzip() is not None:
+            raise RuntimeError('Повреждён ZIP 3MF')
+        root = ET.fromstring(zf.read('3D/3dmodel.model'))
+    if root.get('unit') != 'millimeter':
+        raise RuntimeError('В 3MF не указаны миллиметры')
+    group = root.find('./c:resources/m:colorgroup', ns)
+    if group is None:
+        raise RuntimeError('В 3MF отсутствует стандартная палитра цветов')
+    colors = [c.get('color').upper() for c in group.findall('m:color', ns)]
+    resources = root.findall('./c:resources/c:object', ns)
+    meshes = [obj for obj in resources if obj.find('c:mesh', ns) is not None]
+    parts = {}
+    for obj in meshes:
+        vertices = np.asarray([[float(v.get(k)) for k in ('x', 'y', 'z')]
+                               for v in obj.findall('./c:mesh/c:vertices/c:vertex', ns)])
+        triangle_nodes = obj.findall('./c:mesh/c:triangles/c:triangle', ns)
+        faces = np.asarray([[int(t.get(k)) for k in ('v1', 'v2', 'v3')] for t in triangle_nodes])
+        if not len(faces) or faces.min() < 0 or faces.max() >= len(vertices):
+            raise RuntimeError(f'В 3MF неверные индексы: {obj.get("name")}')
+        edges = Counter((a, b) for face in faces.tolist()
+                        for a, b in ((face[0], face[1]), (face[1], face[2]), (face[2], face[0])))
+        if any(a == b or count != 1 or edges[(b, a)] != 1 for (a, b), count in edges.items()):
+            raise RuntimeError(f'В 3MF незамкнутая сетка: {obj.get("name")}')
+        if obj.get('pid') != group.get('id'):
+            raise RuntimeError(f'В 3MF отсутствует цвет объекта: {obj.get("name")}')
+        if any(t.get('pid') != group.get('id') or t.get('p1') is None for t in triangle_nodes):
+            raise RuntimeError(f'В 3MF отсутствует цвет грани: {obj.get("name")}')
+        parts[obj.get('name')] = (obj, vertices, faces,
+                                  [colors[int(t.get('p1'))] for t in triangle_nodes])
+    return root, ns, meshes, parts, colors
 
 
 def run(exe: Path | None):
@@ -103,6 +143,62 @@ def run(exe: Path | None):
                 raise RuntimeError(f"Ошибка обратного импорта: {back.get('error')}")
             item = next(obj for obj in back['objects'] if obj['name'] == 'imported')
             np.testing.assert_allclose(item['size'], [200., 100., 60.], atol=1e-4)
+
+            if 'clover_keychain_3mf' not in {e['key'] for e in state['examples']}:
+                raise RuntimeError('Пример цветного брелока отсутствует в меню EXE')
+            clover = json.loads(get('/api/example?key=clover_keychain_3mf'))['script']
+            if clover != (ROOT / 'examples' / 'clover_keychain_3mf.forma').read_text(encoding='utf-8'):
+                raise RuntimeError('Встроенный пример брелока отличается от исходника')
+            result = post('/api/build', {'script': clover, 'auto': False})
+            if not result.get('ok'):
+                raise RuntimeError(f"Пример брелока не собран: {result.get('error')}")
+            exported = post('/api/export', {'format': '3mf'})
+            data = (Path(temp) / 'exports' / exported['name']).read_bytes()
+            root, ns, meshes, parts, colors = parse_3mf(data)
+            expected_colors = {'основа': '#185B3AFF', 'вставка_верх': '#66D976FF',
+                               'вставка_право': '#F5C84CFF', 'вставка_низ': '#EB6B83FF',
+                               'вставка_лево': '#41BFD0FF'}
+            if set(parts) != set(expected_colors) or set(colors) != set(expected_colors.values()):
+                raise RuntimeError('В 3MF брелока отсутствуют отдельные детали или цвета')
+            for name, (obj, vertices, faces, face_colors) in parts.items():
+                if colors[int(obj.get('pindex'))] != expected_colors[name] or set(face_colors) != {expected_colors[name]}:
+                    raise RuntimeError(f'Неверный цвет 3MF: {name}')
+            assembly = root.find('./c:resources/c:object[c:components]', ns)
+            if assembly is None or root.find('./c:build/c:item', ns).get('objectid') != assembly.get('id'):
+                raise RuntimeError('3MF брелока не сохранён одной сборкой')
+            if [c.get('objectid') for c in assembly.findall('./c:components/c:component', ns)] != [m.get('id') for m in meshes]:
+                raise RuntimeError('В сборке 3MF нет всех деталей')
+            vertices = np.vstack([p[1] for p in parts.values()])
+            np.testing.assert_allclose(vertices.max(axis=0) - vertices.min(axis=0),
+                                       [39.884224, 48.942112, 3.0], atol=1e-3)
+            bodies = {}
+            for name, (_, vertices, faces, _) in parts.items():
+                body = mf.Manifold(mf.Mesh(vert_properties=np.ascontiguousarray(vertices, dtype=np.float32),
+                                           tri_verts=np.ascontiguousarray(faces, dtype=np.uint32)))
+                if body.status() != mf.Error.NoError or len(body.decompose()) != 1:
+                    raise RuntimeError(f'Деталь 3MF не является единым телом: {name}')
+                bodies[name] = body
+            base_body = bodies['основа']
+            pin = mf.Manifold.cylinder(5, 2.4, 2.4, 64).translate((0, 24, -1))
+            if base_body.genus() != 1 or abs((base_body ^ pin).volume()) > 1e-6:
+                raise RuntimeError('В 3MF брелока нет сквозного отверстия')
+            bodies_list = list(bodies.values())
+            if any(abs((a ^ b).volume()) > 1e-4 for i, a in enumerate(bodies_list) for b in bodies_list[i + 1:]):
+                raise RuntimeError('Цветные детали 3MF пересекаются по объёму')
+
+            painted = 'a = box size=[20,30,40] at=[5,-4,2]\ncolor a #cc0011\npaint a #00ff00 side=верх'
+            result = post('/api/build', {'script': painted, 'auto': False})
+            if not result.get('ok'):
+                raise RuntimeError(f"Окрашенный короб не построен: {result.get('error')}")
+            exported = post('/api/export', {'format': '3mf'})
+            data = (Path(temp) / 'exports' / exported['name']).read_bytes()
+            _, _, _, painted_parts, _ = parse_3mf(data)
+            _, vertices, faces, face_colors = painted_parts['a']
+            tri = vertices[faces]
+            normals = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+            expected = ['#00FF00FF' if n[2] > 0 else '#CC0011FF' for n in normals]
+            if face_colors != expected or len(set(face_colors)) != 2:
+                raise RuntimeError('Роспись граней 3MF потерялась или повернулась')
 
             script = ('thin = box size=[40,40,0.5]\n'
                       'glass = box size=[20,30,40] at=[80,0,0] transmission=0.85\n'
@@ -194,8 +290,10 @@ def run(exe: Path | None):
                     'alpha_fallback': True, 'emissive': True, 'normal_map_tangent': True,
                     'obj_geometry_only': True, 'fastnoise_and_poisson': True,
                     'spatial_passport_fast_and_detail': True, 'embedded_license_bundle': True,
+                    '3mf_components_colors_and_topology': True, '3mf_face_paint': True,
+                    '3mf_keychain_hole_and_inserts': True,
                     'poisson_min_center_mm': float(distances.min()),
-                    'note': 'Проверены данные EXE, не визуальная идентичность рендереров.'}
+                    'note': 'Проверены данные запущенной сборки, не импорт в Studio и не физическая печать.'}
         finally:
             if sys.platform == 'win32':
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], check=False,
